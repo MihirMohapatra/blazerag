@@ -1,5 +1,5 @@
-use std::sync::Mutex;
 use std::path::Path;
+use std::sync::Mutex;
 
 use super::EmbedderTrait;
 use ort::session::Session;
@@ -15,14 +15,19 @@ impl OrtEmbedder {
         let path = Path::new(model_path);
 
         if !path.exists() {
-            tracing::warn!("ONNX model not found at {}. Attempting download...", model_path);
+            tracing::warn!(
+                "ONNX model not found at {}. Attempting download...",
+                model_path
+            );
             Self::download_model(model_path).await?;
         }
 
-        let session = Session::builder()?
-            .commit_from_file(model_path)?;
+        let session = Session::builder()?.commit_from_file(model_path)?;
 
-        Ok(Self { session: Mutex::new(session), dim: 384 })
+        Ok(Self {
+            session: Mutex::new(session),
+            dim: 384,
+        })
     }
 
     async fn download_model(path: &str) -> anyhow::Result<()> {
@@ -58,9 +63,14 @@ impl OrtEmbedder {
         let truncated: Vec<&str> = tokens.iter().take(max_len).copied().collect();
         let seq_len = truncated.len().max(1);
 
-        let mut input_ids: Vec<i64> = truncated.iter().map(|t| {
-            (t.bytes().fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64)) % 30522) as i64
-        }).collect();
+        let mut input_ids: Vec<i64> = truncated
+            .iter()
+            .map(|t| {
+                (t.bytes()
+                    .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64))
+                    % 30522) as i64
+            })
+            .collect();
         while input_ids.len() < seq_len {
             input_ids.push(0);
         }
@@ -68,32 +78,23 @@ impl OrtEmbedder {
         let attention_mask = vec![1i64; seq_len];
         let token_type_ids = vec![0i64; seq_len];
 
-        let input_tensor = Tensor::from_array((
-            vec![1usize, seq_len],
-            input_ids.into_boxed_slice(),
-        ))?;
+        let input_tensor =
+            Tensor::from_array((vec![1usize, seq_len], input_ids.into_boxed_slice()))?;
 
-        let mask_tensor = Tensor::from_array((
-            vec![1usize, seq_len],
-            attention_mask.into_boxed_slice(),
-        ))?;
+        let mask_tensor =
+            Tensor::from_array((vec![1usize, seq_len], attention_mask.into_boxed_slice()))?;
 
-        let tt_tensor = Tensor::from_array((
-            vec![1usize, seq_len],
-            token_type_ids.into_boxed_slice(),
-        ))?;
+        let tt_tensor =
+            Tensor::from_array((vec![1usize, seq_len], token_type_ids.into_boxed_slice()))?;
 
         let mut session = self.session.lock().unwrap();
-        let outputs = session.run(
-            ort::inputs![
-                "input_ids" => input_tensor,
-                "attention_mask" => mask_tensor,
-                "token_type_ids" => tt_tensor,
-            ]
-        )?;
+        let outputs = session.run(ort::inputs![
+            "input_ids" => input_tensor,
+            "attention_mask" => mask_tensor,
+            "token_type_ids" => tt_tensor,
+        ])?;
 
-        let (_shape, data) = outputs["last_hidden_state"]
-            .try_extract_tensor::<f32>()?;
+        let (_shape, data) = outputs["last_hidden_state"].try_extract_tensor::<f32>()?;
 
         let hidden_dim = 384;
         let mut embedding = vec![0.0f32; hidden_dim];
