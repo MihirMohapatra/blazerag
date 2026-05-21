@@ -9,7 +9,10 @@ fn main() {
 
     // 1. Chunking throughput
     let text = "Rust is a blazingly fast systems programming language. ".repeat(5_000);
-    let config = blazerag::chunker::ChunkerConfig { chunk_size: 512, chunk_overlap: 64 };
+    let config = blazerag::chunker::ChunkerConfig {
+        chunk_size: 512,
+        chunk_overlap: 64,
+    };
 
     let start = Instant::now();
     let iterations = 10_000;
@@ -20,7 +23,10 @@ fn main() {
     let ops = iterations as f64 / elapsed.as_secs_f64();
     println!("Chunking Throughput:");
     println!("  {:.0} ops/sec", ops);
-    println!("  {:.2} µs/op", elapsed.as_secs_f64() * 1_000_000.0 / iterations as f64);
+    println!(
+        "  {:.2} µs/op",
+        elapsed.as_secs_f64() * 1_000_000.0 / iterations as f64
+    );
     println!();
 
     // 2. Cold start timing
@@ -29,14 +35,24 @@ fn main() {
         let _ = blazerag::chunker::chunk_text("warmup", &config);
     }
     println!("Cold start (chunker warmup, 100 iterations):");
-    println!("  {:.2} µs total", start.elapsed().as_secs_f64() * 1_000_000.0);
-    println!("  {:.2} µs/op", start.elapsed().as_secs_f64() * 1_000_000.0 / 100.0);
+    println!(
+        "  {:.2} µs total",
+        start.elapsed().as_secs_f64() * 1_000_000.0
+    );
+    println!(
+        "  {:.2} µs/op",
+        start.elapsed().as_secs_f64() * 1_000_000.0 / 100.0
+    );
     println!();
 
     // 3. Memory estimate
     let total_chars = text.len();
     println!("Input Characteristics:");
-    println!("  Text size: {} chars / {} KB", total_chars, total_chars / 1024);
+    println!(
+        "  Text size: {} chars / {} KB",
+        total_chars,
+        total_chars / 1024
+    );
     let chunks = blazerag::chunker::chunk_text(&text, &config);
     println!("  Chunks produced: {}", chunks.len());
     let avg_chunk: usize = chunks.iter().map(|c| c.len()).sum::<usize>() / chunks.len();
