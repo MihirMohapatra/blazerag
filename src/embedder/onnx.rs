@@ -83,7 +83,8 @@ impl OrtEmbedder {
             token_type_ids.into_boxed_slice(),
         ))?;
 
-        let outputs = self.session.lock().unwrap().run(
+        let mut session = self.session.lock().unwrap();
+        let outputs = session.run(
             ort::inputs![
                 "input_ids" => input_tensor,
                 "attention_mask" => mask_tensor,
