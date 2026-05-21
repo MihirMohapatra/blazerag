@@ -104,8 +104,8 @@ impl OrtEmbedder {
                 embedding[j] += data[offset + j];
             }
         }
-        for j in 0..hidden_dim {
-            embedding[j] /= seq_len as f32;
+        for v in embedding.iter_mut() {
+            *v /= seq_len as f32;
         }
 
         let norm: f32 = embedding.iter().map(|v| v * v).sum::<f32>().sqrt();
