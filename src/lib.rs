@@ -1,0 +1,15 @@
+use std::sync::Arc;
+
+pub mod chunker;
+pub mod embedder;
+pub mod llm;
+pub mod retriever;
+pub mod server;
+
+#[derive(Clone)]
+pub struct AppState {
+    pub embedder: Arc<embedder::Embedder>,
+    pub retriever: Arc<retriever::Retriever>,
+    pub llm_client: Arc<llm::LlmClient>,
+    pub chunker_config: chunker::ChunkerConfig,
+}

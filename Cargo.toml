@@ -1,0 +1,32 @@
+[package]
+name = "blazerag"
+version = "0.1.0"
+edition = "2021"
+description = "Blazing-fast RAG server written in Rust"
+authors = ["Blazerag Team"]
+
+[features]
+default = ["onnx"]
+onnx = ["dep:ort"]
+
+[dependencies]
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+qdrant-client = "1.9"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+text-splitter = "0.14"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
+dotenvy = "0.15"
+anyhow = "1"
+futures = "0.3"
+tokio-stream = "0.1"
+ort = { version = "2.0.0-rc.12", optional = true }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
