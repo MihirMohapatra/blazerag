@@ -1,3 +1,4 @@
+use std::sync::Mutex;
 use std::path::Path;
 
 use super::EmbedderTrait;
@@ -5,7 +6,7 @@ use ort::session::Session;
 use ort::value::Tensor;
 
 pub struct OrtEmbedder {
-    session: Session,
+    session: Mutex<Session>,
     dim: usize,
 }
 
@@ -21,7 +22,7 @@ impl OrtEmbedder {
         let session = Session::builder()?
             .commit_from_file(model_path)?;
 
-        Ok(Self { session, dim: 384 })
+        Ok(Self { session: Mutex::new(session), dim: 384 })
     }
 
     async fn download_model(path: &str) -> anyhow::Result<()> {
@@ -82,7 +83,7 @@ impl OrtEmbedder {
             token_type_ids.into_boxed_slice(),
         ))?;
 
-        let outputs = self.session.run(
+        let outputs = self.session.lock().unwrap().run(
             ort::inputs![
                 "input_ids" => input_tensor,
                 "attention_mask" => mask_tensor,
