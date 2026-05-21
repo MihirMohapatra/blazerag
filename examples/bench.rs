@@ -1,6 +1,3 @@
-// Run via: cargo run --release --no-default-features --example bench
-// This file is kept for reference; the active benchmark is examples/bench.rs
-
 use std::time::Instant;
 
 fn main() {
@@ -43,12 +40,12 @@ fn main() {
     println!("  Avg chunk size: {} chars", avg_chunk);
     println!();
 
-    // 4. Compile time
+    // 4. Compile time (from earlier session)
     println!("Compile Time (release, full deps):");
     println!("  1m 59s");
     println!();
 
-    // 5. Binary cold start
+    // 5. Binary cold start (from earlier session)
     println!("Binary Cold Start (basic_usage example):");
     println!("  38 ms");
 }

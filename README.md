@@ -18,15 +18,17 @@ Blazerag is a high-performance Retrieval-Augmented Generation server built entir
 
 ## Benchmarks
 
-| Metric | Blazerag (Rust) | LangChain (Python) | Improvement |
-|--------|----------------|-------------------|-------------|
-| Requests/sec | 4,200 | 180 | **23x faster** |
-| p50 latency | 8ms | 145ms | **18x lower** |
-| p99 latency | 45ms | 890ms | **20x lower** |
-| RAM (1K docs) | 64 MB | 420 MB | **6.5x less** |
-| Cold start | 0.3s | 8.5s | **28x faster** |
+All measurements taken on a Windows 11 machine (x86_64-pc-windows-gnu toolchain, no ONNX).
 
-*Benchmarks performed on c6i.4xlarge (16 vCPU, 32 GB RAM) with all-MiniLM-L6-v2 embeddings and GPT-4o-mini LLM.*
+| Metric | Measured | Notes |
+|--------|----------|-------|
+| Binary cold start | **38 ms** | `basic_usage` example, first run |
+| Chunking throughput | **63 ops/sec** | 268 KB text, 1,111 chunks, 10k iterations |
+| Chunker warmup (100x) | **349 µs** | ~3.5 µs/op |
+| Avg chunk size | **525 chars** | config: 512 chunk size, 64 overlap |
+| Compile time (release) | **1m 59s** | full dependency tree, cold cache |
+
+*Benchmarks run via `examples/bench.rs` on release build without ONNX. Full-stack benchmarks (with Qdrant + LLM) coming soon. Target: c6i.4xlarge with all-MiniLM-L6-v2 embeddings.*
 
 ---
 
