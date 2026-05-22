@@ -194,6 +194,7 @@ dependencies = [
  "text-splitter",
  "tokio",
  "tokio-stream",
+ "tower 0.4.13",
  "tracing",
  "tracing-subscriber",
  "uuid",
