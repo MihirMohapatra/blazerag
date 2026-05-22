@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::chunker;
+use crate::reranker::Reranker;
 use crate::retriever::Document;
 use crate::AppState;
 
@@ -238,6 +239,8 @@ async fn query_handler(
             .into_response();
     }
 
+    let sources = rerank_sources(&state.reranker, &req.question, sources).await;
+
     let context: String = sources
         .iter()
         .enumerate()
@@ -338,6 +341,8 @@ async fn query_stream_handler(
         })
         .collect();
 
+    let sources = rerank_sources(&state.reranker, &req.question, sources).await;
+
     if sources.is_empty() {
         let done = serde_json::json!({"type": "done", "sources": []});
         let stream: SseStream = Box::pin(stream::once(async move {
@@ -392,12 +397,34 @@ async fn query_stream_handler(
     Ok(Sse::new(chained))
 }
 
+async fn rerank_sources(
+    reranker: &Reranker,
+    query: &str,
+    sources: Vec<QuerySource>,
+) -> Vec<QuerySource> {
+    let texts: Vec<(String, String)> = sources
+        .iter()
+        .map(|s| (s.id.clone(), s.text.clone()))
+        .collect();
+    match reranker.rerank(query, &texts).await {
+        Ok(reranked) => reranked
+            .into_iter()
+            .map(|(id, text, score)| QuerySource { id, text, score })
+            .collect(),
+        Err(e) => {
+            tracing::warn!("Reranking failed (falling back to vector scores): {}", e);
+            sources
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::chunker::ChunkerConfig;
     use crate::embedder::Embedder;
     use crate::llm::LlmClient;
+    use crate::reranker::Reranker;
     use crate::retriever::Retriever;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
@@ -414,6 +441,7 @@ mod tests {
             Retriever::new("http://localhost:6333", "test_collection", 384).await
         });
         let llm_client = LlmClient::new("openai", "", "test-model", "http://localhost:9999/v1");
+        let reranker = rt.block_on(async { Reranker::new().await.unwrap() });
 
         let chunker_config = ChunkerConfig {
             chunk_size: 512,
@@ -426,6 +454,7 @@ mod tests {
                 panic!("Qdrant must be running on localhost:6333 for integration tests")
             })),
             llm_client: Arc::new(llm_client),
+            reranker: Arc::new(reranker),
             chunker_config,
         }
     }

@@ -47,6 +47,8 @@ All measurements taken on a Windows 11 machine (x86_64-pc-windows-gnu toolchain,
 
 - **Ingest** documents via POST API  auto-chunks, embeds, and stores in Qdrant
 - **Query** with RAG  retrieves relevant chunks, builds context, calls LLM
+- **Streaming** SSE responses via `/query/stream` endpoint
+- **Reranking** optional cross-encoder reranking (via HuggingFace) after vector search for improved relevance
 - **Modular embedders**  HTTP (HuggingFace API) or ONNX (local, feature-gated, experimental)
 - **Vector search** via Qdrant  cosine similarity, configurable top-k
 - **LLM agnostic**  OpenAI, Anthropic, or any OpenAI-compatible endpoint
@@ -186,6 +188,8 @@ All configuration is via environment variables (see `.env.example`):
 | `CHUNK_SIZE` | `512` | Max chars per chunk |
 | `CHUNK_OVERLAP` | `64` | Overlap between chunks |
 | `TOP_K` | `5` | Default top-k retrieval |
+| `RERANKER_API_URL` | HuggingFace cross-encoder | Cross-encoder reranker endpoint (leave empty to disable) |
+| `RERANKER_API_KEY` |  | API key for reranker (falls back to `HF_API_KEY`) |
 
 ---
 
@@ -214,7 +218,8 @@ cargo test --all-features && cargo clippy -- -D warnings && cargo fmt --check
 |--------|-------|--------|
 | Chunker | Basic splitting, overlap, empty text |  |
 | Embedder (HTTP) | Deterministic output, normalization |  |
-| Server | Integration via HTTP endpoints |  planned for v0.2.0 |
+| Reranker | Score parsing (direct, classification, object), sorting |  |
+| Server | Integration via HTTP endpoints, SSE streaming |  (integration)`#[ignore]`d |
 
 ---
 
@@ -267,6 +272,33 @@ Ask a question using RAG.
 }
 ```
 
+### `POST /query/stream`
+
+Stream a question via Server-Sent Events. Same request format as `/query`.
+
+**Request:**
+```json
+{
+  "question": "string (required)  your question",
+  "top_k": "number (optional, default: 5)"
+}
+```
+
+**Response:** `200 OK` with `Content-Type: text/event-stream`
+
+```
+data: {"type":"token","content":"Blazerag"}
+
+data: {"type":"token","content":" is"}
+
+data: {"type":"token","content":" a"}
+
+data: {"type":"token","content":" blazing-fast"}
+
+data: {"type":"done","sources":[{"text":"...","score":0.95,"id":"uuid-1"}]}
+
+```
+
 ### `GET /health`
 
 **Response:** `200 OK`
@@ -288,27 +320,28 @@ Ask a question using RAG.
         POST /ingest | POST /query
        -
      
-  Axum HTTP   -  Embedder       
-  (tokio)            (HTTP / ONNX)  
-     
-                             
-       -                      -
-     
-  Chunker            Qdrant Client  
-  (text-split)       (vector store) 
-     
-                             
-       -                      -
-     
-  Context     -  LLM API Call   
-  Builder            (OpenAI/Anthropic) 
-     
+   Axum HTTP   -  Embedder       
+   (tokio)            (HTTP / ONNX)  
+   / SSE                          
                               
+        -                      -
+      
+   Chunker            Qdrant Client  
+   (text-split)       (vector store) 
+      
+                              
+        -                      -
+      
+   Reranker          -  LLM API Call   
+   (cross-encoder)      (OpenAI/Anthropic) 
+   (optional)            (streaming)
+      
+                               
                               -
-                     
-                       Response +     
-                       Sources        
-                     
+                      
+                        Response +     
+                        Sources        
+                      
 ```
 
 See [docs/architecture.md](docs/architecture.md) for a detailed breakdown.
@@ -316,8 +349,10 @@ See [docs/architecture.md](docs/architecture.md) for a detailed breakdown.
 ### Flow details
 
 1. **Ingest**: Text  chunks  embed each chunk  store vectors + text in Qdrant
-2. **Query**: Question  embed  vector search  build context from top-k chunks  LLM generates answer  return with sources
-3. **Embedding**: HTTP backend calls HuggingFace Inference API; ONNX backend runs all-MiniLM-L6-v2 locally (experimental)
+2. **Query**: Question  embed  vector search  rerank (cross-encoder)  build context from top-k chunks  LLM generates answer  return with sources
+3. **Streaming**: `/query/stream` returns SSE events (`type: token` for each LLM token, `type: done` with final sources)
+4. **Reranking**: Optional cross-encoder reranks vector search results using HuggingFace Inference API; falls back gracefully to vector scores on error
+5. **Embedding**: HTTP backend calls HuggingFace Inference API; ONNX backend runs all-MiniLM-L6-v2 locally (experimental)
 
 ---
 
@@ -339,6 +374,8 @@ blazerag/
        mod.rs             # Upsert, search, collection mgmt
     chunker/               # Text splitting
        mod.rs             # Chunk with configurable overlap
+    reranker/              # Cross-encoder reranker
+        mod.rs             # HTTP-based reranker (HuggingFace)
     llm/                   # LLM API client
         mod.rs             # OpenAI / Anthropic adapter
  benches/                   # Performance benchmarks
@@ -366,8 +403,8 @@ blazerag/
 
 - [x] Phase 0: Project setup, README, CI
 - [x] Phase 1: MVP  /ingest, /query, embeddings, vector search
-- [ ] Phase 2: Streaming SSE responses + server integration tests
-- [ ] Phase 3: Reranking (cross-encoder)
+- [x] Phase 2: Streaming SSE responses + server integration tests
+- [x] Phase 3: Reranking (cross-encoder)
 - [ ] Phase 4: Batch ingestion (PDF, HTML, Markdown)
 - [ ] Phase 5: Multi-tenant collections
 - [ ] Phase 6: Auth & rate limiting
