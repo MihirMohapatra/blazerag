@@ -20,7 +20,7 @@
   - `UpsertPointsBuilder`, `SearchPointsBuilder`
 
 ## Project Structure
-- **Entrypoint**: `src/main.rs` → loads env, builds `AppState`, starts Axum server
+- **Entrypoint**: `src/main.rs` -> loads env, builds `AppState`, starts Axum server
 - **AppState**: Defined in `src/lib.rs`, shared via `with_state()`
 - **Modules**:
   - `server`: Axum routes (`/ingest`, `/query`, `/health`)
@@ -42,7 +42,7 @@
 - **Env Loading**: Uses `dotenvy::dotenv().ok()` in `main()`
 - **Chunking**: `text-splitter` v0.14 API - `TextSplitter::new(size).chunks(text)`
 - **Embedder Switch**: `Embedder::new()` picks HTTP if `ort` unavailable/features disabled
-- **Mutex Requirement**: `ort` 2.0.0-rc.12 `Session::run` needs `&mut self` → wrapped in `Mutex<Session>`
+- **Mutex Requirement**: `ort` 2.0.0-rc.12 `Session::run` needs `&mut self` -> wrapped in `Mutex<Session>`
 - **CLI Help**: Examples show usage (`basic_usage` prints instructions when run)
 
 ## Verification

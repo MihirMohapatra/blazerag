@@ -1,4 +1,4 @@
-﻿# BlazeRAG Architecture
+# BlazeRAG Architecture
 
 ## Overview
 
@@ -8,9 +8,9 @@ BlazeRAG is a high-performance Retrieval-Augmented Generation (RAG) server built
 
 ### HTTP Server (`src/server/`)
 Axum-based server exposing three endpoints:
-- `POST /ingest` â€” chunk, embed, and store documents
-- `POST /query` â€” embed question, retrieve context, stream LLM answer
-- `GET /health` â€” liveness probe
+- `POST /ingest` " chunk, embed, and store documents
+- `POST /query` " embed question, retrieve context, stream LLM answer
+- `GET /health` " liveness probe
 
 ### Chunker (`src/chunker/`)
 Splits input text into overlapping chunks using the `text-splitter` crate. Configurable via `CHUNK_SIZE` and `CHUNK_OVERLAP` env vars.
@@ -29,8 +29,8 @@ Thin adapter over OpenAI-compatible APIs. Supports OpenAI and Anthropic provider
 ## Data Flow
 
 ```
-Ingest:  text â†’ chunker â†’ embedder â†’ qdrant upsert
-Query:   question â†’ embedder â†’ qdrant search (top-k) â†’ context builder â†’ LLM â†’ streamed answer + sources
+Ingest:  text ' chunker ' embedder ' qdrant upsert
+Query:   question ' embedder ' qdrant search (top-k) ' context builder ' LLM ' streamed answer + sources
 ```
 
 ## Configuration
