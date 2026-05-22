@@ -1,8 +1,12 @@
+use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 
 #[derive(Debug, Clone)]
 pub struct LlmClient {
+    #[allow(dead_code)]
     provider: String,
     api_key: String,
     model: String,
@@ -39,20 +43,18 @@ struct MessageContent {
     content: Option<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 struct StreamChunk {
     choices: Vec<StreamChoice>,
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 struct StreamChoice {
     delta: Delta,
+    #[allow(dead_code)]
     finish_reason: Option<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 struct Delta {
     content: Option<String>,
@@ -70,20 +72,14 @@ impl LlmClient {
     }
 
     pub async fn generate(&self, system_prompt: &str, user_prompt: &str) -> anyhow::Result<String> {
-        match self.provider.as_str() {
-            "openai" => {
-                self.generate_openai(system_prompt, user_prompt, false)
-                    .await
-            }
-            "anthropic" => {
-                self.generate_anthropic(system_prompt, user_prompt, false)
-                    .await
-            }
-            _ => {
-                self.generate_openai(system_prompt, user_prompt, false)
-                    .await
-            }
-        }
+        let resp = self.send_request(system_prompt, user_prompt, false).await?;
+        let data: OpenAiResponse = resp.json().await?;
+        Ok(data
+            .choices
+            .first()
+            .and_then(|c| c.message.content.as_deref())
+            .unwrap_or("")
+            .to_string())
     }
 
     pub async fn generate_stream(
@@ -91,24 +87,63 @@ impl LlmClient {
         system_prompt: &str,
         user_prompt: &str,
     ) -> anyhow::Result<impl tokio_stream::Stream<Item = Result<String, anyhow::Error>>> {
-        match self.provider.as_str() {
-            "openai" => self
-                .generate_openai(system_prompt, user_prompt, true)
-                .await
-                .map(|_| tokio_stream::once(Ok("Streaming not fully implemented yet".to_string()))),
-            _ => self
-                .generate_openai(system_prompt, user_prompt, true)
-                .await
-                .map(|_| tokio_stream::once(Ok("Streaming not fully implemented yet".to_string()))),
+        let (tx, rx) = mpsc::channel::<Result<String, anyhow::Error>>(64);
+
+        let resp = self.send_request(system_prompt, user_prompt, true).await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("LLM API error {}: {}", status, body);
         }
+
+        let mut stream = resp.bytes_stream();
+        tokio::spawn(async move {
+            let mut buffer = String::new();
+            while let Some(chunk_result) = stream.next().await {
+                let bytes = match chunk_result {
+                    Ok(b) => b,
+                    Err(e) => {
+                        let _ = tx.send(Err(anyhow::anyhow!("Stream error: {}", e))).await;
+                        return;
+                    }
+                };
+                buffer.push_str(&String::from_utf8_lossy(&bytes));
+                while let Some(newline_idx) = buffer.find('\n') {
+                    let line = buffer[..newline_idx].trim_end_matches('\r').to_string();
+                    buffer = buffer[newline_idx + 1..].to_string();
+                    if line.is_empty() {
+                        continue;
+                    }
+                    if line == "data: [DONE]" {
+                        return;
+                    }
+                    if let Some(data) = line.strip_prefix("data: ") {
+                        if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
+                            if let Some(choice) = chunk.choices.first() {
+                                if let Some(content) = &choice.delta.content {
+                                    if !content.is_empty()
+                                        && tx.send(Ok(content.clone())).await.is_err()
+                                    {
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(ReceiverStream::new(rx))
     }
 
-    async fn generate_openai(
+    async fn send_request(
         &self,
         system_prompt: &str,
         user_prompt: &str,
-        _stream: bool,
-    ) -> anyhow::Result<String> {
+        stream: bool,
+    ) -> anyhow::Result<reqwest::Response> {
         let body = OpenAiRequest {
             model: self.model.clone(),
             messages: vec![
@@ -121,7 +156,7 @@ impl LlmClient {
                     content: user_prompt.to_string(),
                 },
             ],
-            stream: false,
+            stream,
             temperature: 0.1,
         };
 
@@ -130,6 +165,12 @@ impl LlmClient {
             reqwest::header::CONTENT_TYPE,
             "application/json".parse().unwrap(),
         );
+        if stream {
+            headers.insert(
+                reqwest::header::ACCEPT,
+                "text/event-stream".parse().unwrap(),
+            );
+        }
         if !self.api_key.is_empty() {
             headers.insert(
                 reqwest::header::AUTHORIZATION,
@@ -145,22 +186,6 @@ impl LlmClient {
             .send()
             .await?;
 
-        let data: OpenAiResponse = resp.json().await?;
-        Ok(data
-            .choices
-            .first()
-            .and_then(|c| c.message.content.as_deref())
-            .unwrap_or("")
-            .to_string())
-    }
-
-    async fn generate_anthropic(
-        &self,
-        _system_prompt: &str,
-        _user_prompt: &str,
-        _stream: bool,
-    ) -> anyhow::Result<String> {
-        // Anthropic API integration placeholder
-        Ok("Anthropic support coming soon".to_string())
+        Ok(resp)
     }
 }
