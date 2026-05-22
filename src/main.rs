@@ -1,6 +1,6 @@
 use anyhow::Context;
 use axum::Router;
-use blazerag::{chunker, embedder, llm, retriever, server, AppState};
+use blazerag::{chunker, embedder, llm, reranker, retriever, server, AppState};
 use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
@@ -55,10 +55,16 @@ async fn main() -> anyhow::Result<()> {
     );
     let llm_client = llm::LlmClient::new(&llm_provider, &llm_api_key, &llm_model, &llm_endpoint);
 
+    tracing::info!("Initializing reranker...");
+    let reranker = reranker::Reranker::new()
+        .await
+        .context("Failed to initialize reranker")?;
+
     let state = AppState {
         embedder: Arc::new(embedder),
         retriever: Arc::new(retriever),
         llm_client: Arc::new(llm_client),
+        reranker: Arc::new(reranker),
         chunker_config: chunker::ChunkerConfig {
             chunk_size,
             chunk_overlap,
