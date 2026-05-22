@@ -46,6 +46,7 @@ All measurements taken on a Windows 11 machine (x86_64-pc-windows-gnu toolchain,
 ## Features
 
 - **Ingest** documents via POST API  auto-chunks, embeds, and stores in Qdrant
+- **Batch ingest** PDF, HTML, and Markdown files via `POST /ingest/batch`
 - **Query** with RAG  retrieves relevant chunks, builds context, calls LLM
 - **Streaming** SSE responses via `/query/stream` endpoint
 - **Reranking** optional cross-encoder reranking (via HuggingFace) after vector search for improved relevance
@@ -222,6 +223,7 @@ cargo test --all-features && cargo clippy -- -D warnings && cargo fmt --check
 | Chunker | Basic splitting, overlap, empty text |  |
 | Embedder (HTTP) | Deterministic output, normalization |  |
 | Reranker | Score parsing (direct, classification, object), sorting |  |
+| Ingestor | Format/encoding parsing, HTML/MD parsing, base64 round-trip |  |
 | Server | Integration via HTTP endpoints, SSE streaming |  (integration)`#[ignore]`d |
 
 ---
@@ -252,6 +254,42 @@ Ingest text into the vector store.
   "status": "ok",
   "chunks": "number of chunks stored",
   "ids": "array of chunk UUIDs"
+}
+```
+
+### `POST /ingest/batch`
+
+Ingest multiple PDF, HTML, or Markdown files (base64-encoded content).
+
+**Request:**
+```json
+[
+  {
+    "name": "doc.pdf",
+    "content": "base64-encoded content",
+    "format": "pdf",
+    "encoding": "base64",
+    "metadata": { "source": "upload" }
+  },
+  {
+    "name": "page.html",
+    "content": "<html>...</html>",
+    "format": "html",
+    "encoding": "utf-8"
+  }
+]
+```
+
+**Response:** `200 OK` (or `207 Multi-Status` on partial failure)
+```json
+{
+  "status": "ok",
+  "files_processed": 2,
+  "total_chunks": 12,
+  "results": [
+    { "name": "doc.pdf", "chunks": 8 },
+    { "name": "page.html", "chunks": 4 }
+  ]
 }
 ```
 
@@ -323,46 +361,31 @@ data: {"type":"done","sources":[{"text":"...","score":0.95,"id":"uuid-1"}]}
 ## Architecture
 
 ```
-
-   Client     
-
-        POST /ingest | POST /query
-       -  X-Tenant-ID header
-      
-   Axum HTTP   -  Embedder       
-   (tokio)            (HTTP / ONNX)  
-   / SSE              Tenant routing 
-                              
-        -                      -
-      
-   Chunker            Qdrant Client  
-   (text-split)       (per-tenant collections) 
-                      ({prefix}_{tenant})
-                              
-        -                      -
-      
-   Reranker          -  LLM API Call   
-   (cross-encoder)      (OpenAI/Anthropic) 
-   (optional)            (streaming)
-      
-                               
-                              -
-                      
-                        Response +     
-                        Sources        
-                      
+Client Request
+     ↓
+[Rust HTTP Server]   ← tokio + axum
+     ↓
+[Query Embedder]     ← ort (ONNX) or HuggingFace API
+     ↓
+[Vector Search]      ← qdrant-client (per-tenant collections)
+     ↓
+[Context Builder]    ← chunk ranking + reranking (cross-encoder)
+     ↓
+[LLM API Call]       ← reqwest → OpenAI / Anthropic
+     ↓
+Streamed Response (SSE)
 ```
 
 See [docs/architecture.md](docs/architecture.md) for a detailed breakdown.
 
 ### Flow details
 
-1. **Ingest**: Text  chunks  embed each chunk  store vectors + text in Qdrant (tenant-isolated collection)
-2. **Query**: Question  embed  vector search (tenant-isolated)  rerank (cross-encoder)  build context from top-k chunks  LLM generates answer  return with sources
-3. **Streaming**: `/query/stream` returns SSE events (`type: token` for each LLM token, `type: done` with final sources)
-4. **Reranking**: Optional cross-encoder reranks vector search results using HuggingFace Inference API; falls back gracefully to vector scores on error
-5. **Embedding**: HTTP backend calls HuggingFace Inference API; ONNX backend runs all-MiniLM-L6-v2 locally (experimental)
-6. **Multi-tenant**: Each `X-Tenant-ID` maps to an isolated Qdrant collection (`{collection}_{tenant}`); collections created lazily on first use
+1. **Ingest**: Text → chunk → embed → store in Qdrant (tenant-isolated collection)
+2. **Batch Ingest**: PDF/HTML/Markdown → parse → chunk → embed → store (tenant-isolated)
+3. **Query**: Question → embed → vector search (tenant-isolated) → rerank (cross-encoder) → build context → LLM generates answer → return with sources
+4. **Streaming**: `/query/stream` returns SSE events (`type: token` per LLM token, `type: done` with sources)
+5. **Reranking**: Optional cross-encoder re-ranks vector search results via HuggingFace Inference API; falls back to vector scores on error
+6. **Multi-tenant**: Each `X-Tenant-ID` maps to an isolated Qdrant collection (`{prefix}_{tenant}`); collections created lazily on first use
 
 ---
 
@@ -370,31 +393,25 @@ See [docs/architecture.md](docs/architecture.md) for a detailed breakdown.
 
 ```
 blazerag/
- .github/workflows/ci.yml   # Auto-test on push & PR
- src/
-    main.rs                # Entry point, config, wiring
-    lib.rs                 # AppState, module exports
-    server/                # Axum HTTP routes
-       mod.rs             # /ingest, /query, /health
-    embedder/              # Embedding backends
-       mod.rs             # Trait + enum dispatcher
-       http.rs            # HuggingFace API embedder
-       onnx.rs            # ONNX Runtime embedder (feature, experimental)
-    retriever/             # Qdrant vector search
-       mod.rs             # Upsert, search, per-tenant collection mgmt
-    chunker/               # Text splitting
-       mod.rs             # Chunk with configurable overlap
-    reranker/              # Cross-encoder reranker
-        mod.rs             # HTTP-based reranker (HuggingFace)
-    llm/                   # LLM API client
-        mod.rs             # OpenAI / Anthropic adapter
- benches/                   # Performance benchmarks
- docs/                      # Architecture and design docs
- examples/                  # Usage examples
- CHANGELOG.md               # Version history
- docker-compose.yml         # Qdrant + Blazerag
- Dockerfile                 # Multi-stage production build
- .env.example               # Environment config template
+├── .github/workflows/ci.yml    # auto-test on push
+├── src/
+│   ├── main.rs                 # entry point
+│   ├── lib.rs                  # AppState, module exports
+│   ├── server/                 # axum HTTP routes
+│   ├── embedder/               # ONNX / HTTP embedding logic
+│   ├── retriever/              # vector search (Qdrant)
+│   ├── chunker/                # text splitting
+│   ├── reranker/               # cross-encoder reranker
+│   ├── ingestor/               # PDF / HTML / Markdown parsing
+│   └── llm/                    # LLM API calls
+├── docs/
+├── examples/
+├── benches/                    # benchmarks vs Python
+├── Cargo.toml
+├── Dockerfile
+├── docker-compose.yml          # includes Qdrant
+├── README.md                   # ← most important file
+└── .env.example
 ```
 
 ---
@@ -415,7 +432,7 @@ blazerag/
 - [x] Phase 1: MVP  /ingest, /query, embeddings, vector search
 - [x] Phase 2: Streaming SSE responses + server integration tests
 - [x] Phase 3: Reranking (cross-encoder)
-- [ ] Phase 4: Batch ingestion (PDF, HTML, Markdown) [feature/batch-ingestion]
+- [x] Phase 4: Batch ingestion (PDF, HTML, Markdown)
 - [x] Phase 5: Multi-tenant collections
 - [ ] Phase 6: Auth & rate limiting
 - [ ] Phase 7: Web UI dashboard
