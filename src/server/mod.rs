@@ -13,7 +13,10 @@ use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use std::str::FromStr;
+
 use crate::chunker;
+use crate::ingestor::{self, Encoding, FileFormat};
 use crate::reranker::Reranker;
 use crate::retriever::Document;
 use crate::AppState;
@@ -76,6 +79,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/health", get(health_check))
         .route("/ingest", post(ingest_handler))
+        .route("/ingest/batch", post(batch_ingest_handler))
         .route("/query", post(query_handler))
         .route("/query/stream", post(query_stream_handler))
 }
@@ -178,6 +182,180 @@ async fn ingest_handler(
             )
         }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct BatchFileEntry {
+    pub name: String,
+    pub content: String,
+    pub format: String,
+    #[serde(default = "default_encoding")]
+    pub encoding: String,
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
+}
+
+fn default_encoding() -> String {
+    "utf-8".into()
+}
+
+#[derive(Serialize)]
+pub struct FileResult {
+    pub name: String,
+    pub chunks: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct BatchIngestResponse {
+    pub status: String,
+    pub files_processed: usize,
+    pub total_chunks: usize,
+    pub results: Vec<FileResult>,
+}
+
+async fn batch_ingest_handler(
+    State(state): State<AppState>,
+    Json(req): Json<Vec<BatchFileEntry>>,
+) -> impl IntoResponse {
+    let total = req.len();
+    tracing::info!("Batch ingest: {} files", total);
+
+    let mut results = Vec::with_capacity(total);
+    let mut overall_chunks = 0usize;
+    let mut has_error = false;
+
+    for file in req {
+        let format = match FileFormat::from_str(&file.format) {
+            Ok(f) => f,
+            Err(e) => {
+                tracing::warn!("Skipping {}: {}", file.name, e);
+                results.push(FileResult {
+                    name: file.name,
+                    chunks: 0,
+                    error: Some(e.to_string()),
+                });
+                has_error = true;
+                continue;
+            }
+        };
+
+        let encoding = match Encoding::from_str(&file.encoding) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!("Skipping {}: {}", file.name, e);
+                results.push(FileResult {
+                    name: file.name,
+                    chunks: 0,
+                    error: Some(e.to_string()),
+                });
+                has_error = true;
+                continue;
+            }
+        };
+
+        let text = match ingestor::parse_text(&file.content, format, encoding) {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::warn!("Skipping {}: {}", file.name, e);
+                results.push(FileResult {
+                    name: file.name,
+                    chunks: 0,
+                    error: Some(e.to_string()),
+                });
+                has_error = true;
+                continue;
+            }
+        };
+
+        let chunks = chunker::chunk_text(&text, &state.chunker_config);
+        if chunks.is_empty() {
+            results.push(FileResult {
+                name: file.name,
+                chunks: 0,
+                error: Some("No content after parsing".into()),
+            });
+            has_error = true;
+            continue;
+        }
+
+        let embeddings = match state.embedder.embed(&chunks) {
+            Ok(embs) => embs,
+            Err(e) => {
+                tracing::error!("Embedding failed for {}: {}", file.name, e);
+                results.push(FileResult {
+                    name: file.name,
+                    chunks: 0,
+                    error: Some(format!("Embedding failed: {}", e)),
+                });
+                has_error = true;
+                continue;
+            }
+        };
+
+        let ids: Vec<String> = (0..chunks.len())
+            .map(|_| Uuid::new_v4().to_string())
+            .collect();
+
+        let metadata = file
+            .metadata
+            .unwrap_or_else(|| serde_json::json!({"source": file.name, "format": file.format}));
+
+        let documents: Vec<Document> = chunks
+            .into_iter()
+            .zip(ids.iter())
+            .map(|(text, id)| Document {
+                id: id.clone(),
+                text,
+                metadata: metadata.clone(),
+            })
+            .collect();
+
+        match state.retriever.upsert(&documents, &embeddings).await {
+            Ok(_) => {
+                tracing::info!("Stored {} chunks from {}", documents.len(), file.name);
+                overall_chunks += documents.len();
+                results.push(FileResult {
+                    name: file.name,
+                    chunks: documents.len(),
+                    error: None,
+                });
+            }
+            Err(e) => {
+                tracing::error!("Qdrant upsert failed for {}: {}", file.name, e);
+                results.push(FileResult {
+                    name: file.name,
+                    chunks: 0,
+                    error: Some(format!("Storage failed: {}", e)),
+                });
+                has_error = true;
+            }
+        }
+    }
+
+    let status_code = if has_error {
+        axum::http::StatusCode::MULTI_STATUS
+    } else {
+        axum::http::StatusCode::OK
+    };
+
+    (
+        status_code,
+        Json(
+            serde_json::to_value(BatchIngestResponse {
+                status: if has_error {
+                    "partial".to_string()
+                } else {
+                    "ok".to_string()
+                },
+                files_processed: total,
+                total_chunks: overall_chunks,
+                results,
+            })
+            .unwrap(),
+        ),
+    )
 }
 
 async fn query_handler(
@@ -629,6 +807,7 @@ mod tests {
         let routes_str = format!("{:?}", app);
         assert!(routes_str.contains("/health"));
         assert!(routes_str.contains("/ingest"));
+        assert!(routes_str.contains("/ingest/batch"));
         assert!(routes_str.contains("/query"));
         assert!(routes_str.contains("/query/stream"));
     }

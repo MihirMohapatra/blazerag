@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 pub mod chunker;
 pub mod embedder;
+pub mod ingestor;
 pub mod llm;
 pub mod reranker;
 pub mod retriever;
