@@ -49,6 +49,7 @@ All measurements taken on a Windows 11 machine (x86_64-pc-windows-gnu toolchain,
 - **Query** with RAG  retrieves relevant chunks, builds context, calls LLM
 - **Streaming** SSE responses via `/query/stream` endpoint
 - **Reranking** optional cross-encoder reranking (via HuggingFace) after vector search for improved relevance
+- **Multi-tenant** isolated Qdrant collections per tenant via `X-Tenant-ID` header; collections created lazily on first use
 - **Modular embedders**  HTTP (HuggingFace API) or ONNX (local, feature-gated, experimental)
 - **Vector search** via Qdrant  cosine similarity, configurable top-k
 - **LLM agnostic**  OpenAI, Anthropic, or any OpenAI-compatible endpoint
@@ -121,6 +122,7 @@ The server starts on `http://0.0.0.0:3000` by default (configurable via `HOST` a
 ```bash
 curl -X POST http://localhost:3000/ingest \
   -H "Content-Type: application/json" \
+  -H "X-Tenant-ID: acme-corp" \
   -d '{
     "text": "Blazerag is a blazing-fast RAG server written in Rust. It uses Qdrant for vector search and supports ONNX or HTTP embeddings.",
     "metadata": { "source": "docs", "topic": "introduction" }
@@ -141,6 +143,7 @@ Response:
 ```bash
 curl -X POST http://localhost:3000/query \
   -H "Content-Type: application/json" \
+  -H "X-Tenant-ID: acme-corp" \
   -d '{
     "question": "What is Blazerag?",
     "top_k": 5
@@ -224,6 +227,12 @@ cargo test --all-features && cargo clippy -- -D warnings && cargo fmt --check
 ---
 
 ## API Reference
+
+### Headers
+
+| Header | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `X-Tenant-ID` | No | `default` | Isolates data per tenant into separate Qdrant collections |
 
 ### `POST /ingest`
 
@@ -318,17 +327,17 @@ data: {"type":"done","sources":[{"text":"...","score":0.95,"id":"uuid-1"}]}
    Client     
 
         POST /ingest | POST /query
-       -
-     
+       -  X-Tenant-ID header
+      
    Axum HTTP   -  Embedder       
    (tokio)            (HTTP / ONNX)  
-   / SSE                          
+   / SSE              Tenant routing 
                               
         -                      -
       
    Chunker            Qdrant Client  
-   (text-split)       (vector store) 
-      
+   (text-split)       (per-tenant collections) 
+                      ({prefix}_{tenant})
                               
         -                      -
       
@@ -348,11 +357,12 @@ See [docs/architecture.md](docs/architecture.md) for a detailed breakdown.
 
 ### Flow details
 
-1. **Ingest**: Text  chunks  embed each chunk  store vectors + text in Qdrant
-2. **Query**: Question  embed  vector search  rerank (cross-encoder)  build context from top-k chunks  LLM generates answer  return with sources
+1. **Ingest**: Text  chunks  embed each chunk  store vectors + text in Qdrant (tenant-isolated collection)
+2. **Query**: Question  embed  vector search (tenant-isolated)  rerank (cross-encoder)  build context from top-k chunks  LLM generates answer  return with sources
 3. **Streaming**: `/query/stream` returns SSE events (`type: token` for each LLM token, `type: done` with final sources)
 4. **Reranking**: Optional cross-encoder reranks vector search results using HuggingFace Inference API; falls back gracefully to vector scores on error
 5. **Embedding**: HTTP backend calls HuggingFace Inference API; ONNX backend runs all-MiniLM-L6-v2 locally (experimental)
+6. **Multi-tenant**: Each `X-Tenant-ID` maps to an isolated Qdrant collection (`{collection}_{tenant}`); collections created lazily on first use
 
 ---
 
@@ -371,7 +381,7 @@ blazerag/
        http.rs            # HuggingFace API embedder
        onnx.rs            # ONNX Runtime embedder (feature, experimental)
     retriever/             # Qdrant vector search
-       mod.rs             # Upsert, search, collection mgmt
+       mod.rs             # Upsert, search, per-tenant collection mgmt
     chunker/               # Text splitting
        mod.rs             # Chunk with configurable overlap
     reranker/              # Cross-encoder reranker
@@ -405,8 +415,8 @@ blazerag/
 - [x] Phase 1: MVP  /ingest, /query, embeddings, vector search
 - [x] Phase 2: Streaming SSE responses + server integration tests
 - [x] Phase 3: Reranking (cross-encoder)
-- [ ] Phase 4: Batch ingestion (PDF, HTML, Markdown)
-- [ ] Phase 5: Multi-tenant collections
+- [ ] Phase 4: Batch ingestion (PDF, HTML, Markdown) [feature/batch-ingestion]
+- [x] Phase 5: Multi-tenant collections
 - [ ] Phase 6: Auth & rate limiting
 - [ ] Phase 7: Web UI dashboard
 - [ ] Phase 8: Managed cloud offering
