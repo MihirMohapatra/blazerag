@@ -1,9 +1,13 @@
-[package]
+﻿[package]
 name = "blazerag"
 version = "0.1.0"
 edition = "2021"
 description = "Blazing-fast RAG server written in Rust"
-authors = ["Blazerag Team"]
+authors = ["Mihir Mohapatra <mihirmohapatra@outlook.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/MihirMohapatra/blazerag"
+keywords = ["rag", "llm", "vector-search", "axum", "qdrant"]
+categories = ["web-programming::http-server", "science"]
 
 [features]
 default = ["onnx"]
@@ -24,6 +28,8 @@ dotenvy = "0.15"
 anyhow = "1"
 futures = "0.3"
 tokio-stream = "0.1"
+# ort 2.0.0-rc.12 is a release candidate; ONNX support is experimental.
+# Use --no-default-features to fall back to the HTTP embedder on stable builds.
 ort = { version = "2.0.0-rc.12", optional = true, features = ["ndarray"] }
 
 [profile.release]
