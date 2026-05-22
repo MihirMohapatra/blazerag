@@ -12,7 +12,7 @@
 
 </div>
 
-Blazerag is a high-performance Retrieval-Augmented Generation server built entirely in Rust. It handles **5,000+ concurrent requests** on a single machine — 20-50x faster than Python-based RAG solutions like LangChain or LlamaIndex.
+Blazerag is a high-performance Retrieval-Augmented Generation server built entirely in Rust. It handles **5,000+ concurrent requests** on a single machine  20-50x faster than Python-based RAG solutions like LangChain or LlamaIndex.
 
 ---
 
@@ -24,7 +24,7 @@ All measurements taken on a Windows 11 machine (x86_64-pc-windows-gnu toolchain,
 |--------|----------|-------|
 | Binary cold start | **38 ms** | `basic_usage` example, first run |
 | Chunking throughput | **63 ops/sec** | 268 KB text, 1,111 chunks, 10k iterations |
-| Chunker warmup (100x) | **349 µs** | ~3.5 µs/op |
+| Chunker warmup (100x) | **349 us** | ~3.5 us/op |
 | Avg chunk size | **525 chars** | config: 512 chunk size, 64 overlap |
 | Compile time (release) | **1m 59s** | full dependency tree, cold cache |
 
@@ -34,13 +34,13 @@ All measurements taken on a Windows 11 machine (x86_64-pc-windows-gnu toolchain,
 
 ## Features
 
-- **Ingest** documents via POST API — auto-chunks, embeds, and stores in Qdrant
-- **Query** with RAG — retrieves relevant chunks, builds context, streams LLM response
-- **Modular embedders** — HTTP (HuggingFace API) or ONNX (local, feature-gated)
-- **Vector search** via Qdrant — cosine similarity, configurable top-k
-- **LLM agnostic** — OpenAI, Anthropic, or any OpenAI-compatible endpoint
+- **Ingest** documents via POST API  auto-chunks, embeds, and stores in Qdrant
+- **Query** with RAG  retrieves relevant chunks, builds context, streams LLM response
+- **Modular embedders**  HTTP (HuggingFace API) or ONNX (local, feature-gated)
+- **Vector search** via Qdrant  cosine similarity, configurable top-k
+- **LLM agnostic**  OpenAI, Anthropic, or any OpenAI-compatible endpoint
 - **Streaming** support for real-time responses
-- **Docker ready** — one-command deploy with Qdrant
+- **Docker ready**  one-command deploy with Qdrant
 
 ---
 
@@ -60,7 +60,7 @@ All measurements taken on a Windows 11 machine (x86_64-pc-windows-gnu toolchain,
 git clone https://github.com/MihirMohapatra/blazerag
 cd blazerag
 cp .env.example .env
-# Edit .env — set your LLM_API_KEY
+# Edit .env  set your LLM_API_KEY
 docker compose up -d
 ```
 
@@ -70,7 +70,7 @@ docker compose up -d
 git clone https://github.com/MihirMohapatra/blazerag
 cd blazerag
 cp .env.example .env
-# Edit .env — set your LLM_API_KEY and QDRANT_URL
+# Edit .env  set your LLM_API_KEY and QDRANT_URL
 
 # Start Qdrant separately first:
 docker compose up -d qdrant
@@ -166,11 +166,11 @@ All configuration is via environment variables (see `.env.example`):
 | `QDRANT_COLLECTION` | `documents` | Qdrant collection name |
 | `EMBEDDING_BACKEND` | `http` | `http` (HuggingFace API) or `onnx` (local) |
 | `EMBEDDING_API_URL` | HuggingFace all-MiniLM-L6-v2 | Embedding API endpoint |
-| `EMBEDDING_API_KEY` | — | API key for embedding service |
+| `EMBEDDING_API_KEY` |  | API key for embedding service |
 | `ONNX_MODEL_PATH` | `./models/all-MiniLM-L6-v2.onnx` | Path to ONNX model file |
 | `EMBEDDING_DIM` | `384` | Embedding dimension |
 | `LLM_PROVIDER` | `openai` | LLM provider (`openai`, `anthropic`) |
-| `LLM_API_KEY` | — | LLM API key (required) |
+| `LLM_API_KEY` |  | LLM API key (required) |
 | `LLM_MODEL` | `gpt-4o-mini` | Model name |
 | `LLM_ENDPOINT` | OpenAI API | LLM API endpoint |
 | `CHUNK_SIZE` | `512` | Max chars per chunk |
@@ -202,9 +202,9 @@ cargo test --all-features && cargo clippy -- -D warnings && cargo fmt --check
 
 | Module | Tests | Status |
 |--------|-------|--------|
-| Chunker | Basic splitting, overlap, empty text | ✅ |
-| Embedder (HTTP) | Deterministic output, normalization | ✅ |
-| Server | Integration via HTTP endpoints | 🚧 |
+| Chunker | Basic splitting, overlap, empty text | [OK] |
+| Embedder (HTTP) | Deterministic output, normalization | [OK] |
+| Server | Integration via HTTP endpoints | [WIP] |
 
 ---
 
@@ -217,8 +217,8 @@ Ingest text into the vector store.
 **Request:**
 ```json
 {
-  "text": "string (required) — document content",
-  "metadata": "object (optional) — arbitrary key-value pairs"
+  "text": "string (required)  document content",
+  "metadata": "object (optional)  arbitrary key-value pairs"
 }
 ```
 
@@ -238,15 +238,15 @@ Ask a question using RAG.
 **Request:**
 ```json
 {
-  "question": "string (required) — your question",
-  "top_k": "number (optional, default: 5) — number of chunks to retrieve"
+  "question": "string (required)  your question",
+  "top_k": "number (optional, default: 5)  number of chunks to retrieve"
 }
 ```
 
 **Response:** `200 OK`
 ```json
 {
-  "answer": "string — LLM-generated answer",
+  "answer": "string  LLM-generated answer",
   "sources": [
     {
       "text": "retrieved chunk text",
@@ -305,8 +305,8 @@ Ask a question using RAG.
 
 ### Flow details
 
-1. **Ingest**: Text → chunks → embed each chunk → store vectors + text in Qdrant
-2. **Query**: Question → embed → vector search → build context from top-k chunks → LLM generates answer → return with sources
+1. **Ingest**: Text -> chunks -> embed each chunk -> store vectors + text in Qdrant
+2. **Query**: Question -> embed -> vector search -> build context from top-k chunks -> LLM generates answer -> return with sources
 3. **Embedding**: HTTP backend calls HuggingFace Inference API; ONNX backend runs all-MiniLM-L6-v2 locally
 
 ---
@@ -346,7 +346,7 @@ blazerag/
 
 | Tag | Description |
 |-----|-------------|
-| `v0.1.0` | MVP — ingest, query, HTTP embeddings, Qdrant integration |
+| `v0.1.0` | MVP  ingest, query, HTTP embeddings, Qdrant integration |
 | `latest` | Latest stable release (Docker) |
 | `main` | Development branch (may be unstable) |
 
@@ -355,7 +355,7 @@ blazerag/
 ## Roadmap
 
 - [x] Phase 0: Project setup, README, CI
-- [x] Phase 1: MVP — /ingest, /query, embeddings, vector search
+- [x] Phase 1: MVP  /ingest, /query, embeddings, vector search
 - [ ] Streaming SSE responses
 - [ ] Reranking (cross-encoder)
 - [ ] Batch ingestion (PDF, HTML, Markdown)
@@ -403,3 +403,4 @@ cargo doc --open
 Dual-licensed under [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE).
 
 For commercial licensing and enterprise support, contact hello@blazerag.dev.
+
