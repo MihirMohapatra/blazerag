@@ -272,34 +272,35 @@ Ask a question using RAG.
 ## Architecture
 
 ```
-┌──────────────┐
-│   Client     │
-└──────┬───────┘
-       │ POST /ingest | POST /query
-       ▼
-┌──────────────┐     ┌─────────────────┐
-│  Axum HTTP   │────▶│  Embedder       │
-│  (tokio)     │     │  (HTTP / ONNX)  │
-└──────┬───────┘     └────────┬────────┘
-       │                      │
-       ▼                      ▼
-┌──────────────┐     ┌─────────────────┐
-│  Chunker     │     │  Qdrant Client  │
-│  (text-split)│     │  (vector store) │
-└──────┬───────┘     └────────┬────────┘
-       │                      │
-       ▼                      ▼
-┌──────────────┐     ┌─────────────────┐
-│  Context     │────▶│  LLM API Call   │
-│  Builder     │     │  (OpenAI/Anthropic) │
-└──────────────┘     └────────┬────────┘
-                              │
-                              ▼
-                     ┌─────────────────┐
-                     │  Streamed       │
-                     │  Response +     │
-                     │  Sources        │
-                     └─────────────────┘
++------------------+
+|     Client       |
++--------+---------+
+         |
+         | POST /ingest | POST /query
+         v
++------------------+     +-------------------+
+|   Axum HTTP      |---->|    Embedder       |
+|   (tokio)        |     |  (HTTP / ONNX)    |
++--------+---------+     +---------+---------+
+         |                          |
+         v                          v
++------------------+     +-------------------+
+|    Chunker       |     |  Qdrant Client    |
+|  (text-split)    |     |  (vector store)   |
++--------+---------+     +---------+---------+
+         |                          |
+         v                          v
++------------------+     +-------------------+
+|   Context        |---->|  LLM API Call     |
+|   Builder        |     |(OpenAI/Anthropic) |
++------------------+     +---------+---------+
+                                    |
+                                    v
+                           +-------------------+
+                           |   Streamed        |
+                           |   Response +      |
+                           |   Sources         |
+                           +-------------------+
 ```
 
 ### Flow details
@@ -314,29 +315,29 @@ Ask a question using RAG.
 
 ```
 blazerag/
-├── .github/workflows/ci.yml   # Auto-test on push & PR
-├── src/
-│   ├── main.rs                # Entry point, config, wiring
-│   ├── lib.rs                 # AppState, module exports
-│   ├── server/                # Axum HTTP routes
-│   │   └── mod.rs             # /ingest, /query, /health
-│   ├── embedder/              # Embedding backends
-│   │   ├── mod.rs             # Trait + enum dispatcher
-│   │   ├── http.rs            # HuggingFace API embedder
-│   │   └── onnx.rs            # ONNX Runtime embedder (feature)
-│   ├── retriever/             # Qdrant vector search
-│   │   └── mod.rs             # Upsert, search, collection mgmt
-│   ├── chunker/               # Text splitting
-│   │   └── mod.rs             # Chunk with configurable overlap
-│   └── llm/                   # LLM API client
-│       └── mod.rs             # OpenAI / Anthropic adapter
-├── benches/                   # Performance benchmarks
-├── examples/                  # Usage examples
-├── docs/                      # Documentation
-├── docker-compose.yml         # Qdrant + Blazerag
-├── Dockerfile                 # Multi-stage production build
-├── .env.example               # Environment config template
-└── rust-toolchain.toml        # Rust toolchain pinning
+|-- .github/workflows/ci.yml   # Auto-test on push & PR
+|-- src/
+|   |-- main.rs                # Entry point, config, wiring
+|   |-- lib.rs                 # AppState, module exports
+|   |-- server/                # Axum HTTP routes
+|   |   +-- mod.rs             # /ingest, /query, /health
+|   |-- embedder/              # Embedding backends
+|   |   |-- mod.rs             # Trait + enum dispatcher
+|   |   |-- http.rs            # HuggingFace API embedder
+|   |   +-- onnx.rs            # ONNX Runtime embedder (feature)
+|   |-- retriever/             # Qdrant vector search
+|   |   +-- mod.rs             # Upsert, search, collection mgmt
+|   |-- chunker/               # Text splitting
+|   |   +-- mod.rs             # Chunk with configurable overlap
+|   +-- llm/                   # LLM API client
+|       +-- mod.rs             # OpenAI / Anthropic adapter
+|-- benches/                   # Performance benchmarks
+|-- examples/                  # Usage examples
+|-- docs/                      # Documentation
+|-- docker-compose.yml         # Qdrant + Blazerag
+|-- Dockerfile                 # Multi-stage production build
+|-- .env.example               # Environment config template
++-- rust-toolchain.toml        # Rust toolchain pinning
 ```
 
 ---
