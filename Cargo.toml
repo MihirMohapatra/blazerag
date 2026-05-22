@@ -32,6 +32,12 @@ tokio-stream = "0.1"
 # Use --no-default-features to fall back to the HTTP embedder on stable builds.
 ort = { version = "2.0.0-rc.12", optional = true, features = ["ndarray"] }
 
+# Batch ingestion
+pdf-extract = "0.7"
+scraper = "0.20"
+pulldown-cmark = "0.12"
+base64 = "0.22"
+
 [dev-dependencies]
 tower = { version = "0.4", features = ["util"] }
 
