@@ -24,7 +24,7 @@ fn main() {
     println!("Chunking Throughput:");
     println!("  {:.0} ops/sec", ops);
     println!(
-        "  {:.2} µs/op",
+        "  {:.2} us/op",
         elapsed.as_secs_f64() * 1_000_000.0 / iterations as f64
     );
     println!();
@@ -36,11 +36,11 @@ fn main() {
     }
     println!("Cold start (chunker warmup, 100 iterations):");
     println!(
-        "  {:.2} µs total",
+        "  {:.2} us total",
         start.elapsed().as_secs_f64() * 1_000_000.0
     );
     println!(
-        "  {:.2} µs/op",
+        "  {:.2} us/op",
         start.elapsed().as_secs_f64() * 1_000_000.0 / 100.0
     );
     println!();

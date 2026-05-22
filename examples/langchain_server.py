@@ -1,5 +1,5 @@
 """
-LangChain RAG server — for benchmark comparison vs Blazerag.
+LangChain RAG server - for benchmark comparison vs Blazerag.
 Run: pip install langchain langchain-community fastapi uvicorn qdrant-client
 """
 

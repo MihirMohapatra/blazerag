@@ -1,4 +1,4 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to BlazeRAG are documented here.
 
@@ -18,12 +18,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
-## [0.1.0] â€” 2025
+## [0.1.0] " 2025
 
 ### Added
-- `POST /ingest` â€” chunk, embed, and store documents in Qdrant
-- `POST /query` â€” RAG query with LLM-generated answer and source attribution
-- `GET /health` â€” liveness probe
+- `POST /ingest` " chunk, embed, and store documents in Qdrant
+- `POST /query` " RAG query with LLM-generated answer and source attribution
+- `GET /health` " liveness probe
 - HTTP embedder backend (HuggingFace Inference API)
 - ONNX embedder backend (`all-MiniLM-L6-v2`, feature-gated, experimental)
 - Qdrant vector store integration (cosine similarity, configurable top-k)
