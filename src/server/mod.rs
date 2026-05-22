@@ -2,7 +2,7 @@ use std::pin::Pin;
 
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::sse::{Event, Sse},
     response::{IntoResponse, Json},
     routing::{get, post},
@@ -43,6 +43,15 @@ fn default_top_k() -> u64 {
     5
 }
 
+fn extract_tenant_id(headers: &HeaderMap) -> String {
+    headers
+        .get("x-tenant-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "default".to_string())
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct QuerySource {
     pub text: String,
@@ -79,10 +88,16 @@ async fn health_check() -> impl IntoResponse {
 }
 
 async fn ingest_handler(
+    headers: HeaderMap,
     State(state): State<AppState>,
     Json(req): Json<IngestRequest>,
 ) -> impl IntoResponse {
-    tracing::info!("Ingesting text ({} chars)", req.text.len());
+    let tenant_id = extract_tenant_id(&headers);
+    tracing::info!(
+        "Ingesting text ({} chars) for tenant={}",
+        req.text.len(),
+        tenant_id
+    );
 
     let chunks = chunker::chunk_text(&req.text, &state.chunker_config);
     tracing::info!("Split into {} chunks", chunks.len());
@@ -131,7 +146,11 @@ async fn ingest_handler(
         })
         .collect();
 
-    match state.retriever.upsert(&documents, &embeddings).await {
+    match state
+        .retriever
+        .upsert(&tenant_id, &documents, &embeddings)
+        .await
+    {
         Ok(_) => {
             tracing::info!("Successfully stored {} chunks", documents.len());
             (
@@ -162,10 +181,12 @@ async fn ingest_handler(
 }
 
 async fn query_handler(
+    headers: HeaderMap,
     State(state): State<AppState>,
     Json(req): Json<QueryRequest>,
 ) -> impl IntoResponse {
-    tracing::info!("Query: {}", req.question);
+    let tenant_id = extract_tenant_id(&headers);
+    tracing::info!("Query: {} (tenant={})", req.question, tenant_id);
 
     let query_embeddings = match state.embedder.embed(std::slice::from_ref(&req.question)) {
         Ok(embs) => embs,
@@ -186,7 +207,11 @@ async fn query_handler(
 
     let query_vector = &query_embeddings[0];
 
-    let search_results = match state.retriever.search(query_vector, req.top_k).await {
+    let search_results = match state
+        .retriever
+        .search(&tenant_id, query_vector, req.top_k)
+        .await
+    {
         Ok(results) => results,
         Err(e) => {
             tracing::error!("Vector search failed: {}", e);
@@ -288,10 +313,12 @@ async fn query_handler(
 }
 
 async fn query_stream_handler(
+    headers: HeaderMap,
     State(state): State<AppState>,
     Json(req): Json<QueryRequest>,
 ) -> Result<Sse<SseStream>, (StatusCode, Json<ErrorResponse>)> {
-    tracing::info!("Streaming query: {}", req.question);
+    let tenant_id = extract_tenant_id(&headers);
+    tracing::info!("Streaming query: {} (tenant={})", req.question, tenant_id);
 
     let query_embeddings = state
         .embedder
@@ -308,7 +335,7 @@ async fn query_stream_handler(
 
     let search_results = state
         .retriever
-        .search(&query_embeddings[0], req.top_k)
+        .search(&tenant_id, &query_embeddings[0], req.top_k)
         .await
         .map_err(|e| {
             tracing::error!("Vector search failed: {}", e);
