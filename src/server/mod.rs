@@ -216,11 +216,13 @@ pub struct BatchIngestResponse {
 }
 
 async fn batch_ingest_handler(
+    headers: HeaderMap,
     State(state): State<AppState>,
     Json(req): Json<Vec<BatchFileEntry>>,
 ) -> impl IntoResponse {
+    let tenant_id = extract_tenant_id(&headers);
     let total = req.len();
-    tracing::info!("Batch ingest: {} files", total);
+    tracing::info!("Batch ingest: {} files for tenant={}", total, tenant_id);
 
     let mut results = Vec::with_capacity(total);
     let mut overall_chunks = 0usize;
@@ -312,7 +314,11 @@ async fn batch_ingest_handler(
             })
             .collect();
 
-        match state.retriever.upsert(&documents, &embeddings).await {
+        match state
+            .retriever
+            .upsert(&tenant_id, &documents, &embeddings)
+            .await
+        {
             Ok(_) => {
                 tracing::info!("Stored {} chunks from {}", documents.len(), file.name);
                 overall_chunks += documents.len();
