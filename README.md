@@ -192,6 +192,9 @@ All configuration is via environment variables (see `.env.example`):
 | `CHUNK_SIZE` | `512` | Max chars per chunk |
 | `CHUNK_OVERLAP` | `64` | Overlap between chunks |
 | `TOP_K` | `5` | Default top-k retrieval |
+| `REQUIRE_AUTH` | `false` | Require API key on ingest/query endpoints (`true`/`false`) |
+| `API_KEYS` |  | Comma-separated valid API keys (used by `X-API-Key` or `Authorization: Bearer`) |
+| `RATE_LIMIT_PER_MINUTE` | `120` | Per-identity request limit (ingest/query endpoints) |
 | `RERANKER_API_URL` | HuggingFace cross-encoder | Cross-encoder reranker endpoint (leave empty to disable) |
 | `RERANKER_API_KEY` |  | API key for reranker (falls back to `HF_API_KEY`) |
 
@@ -235,6 +238,11 @@ cargo test --all-features && cargo clippy -- -D warnings && cargo fmt --check
 | Header | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `X-Tenant-ID` | No | `default` | Isolates data per tenant into separate Qdrant collections |
+| `X-API-Key` | Depends (`REQUIRE_AUTH`) |  | API key auth header for protected endpoints |
+| `Authorization: Bearer <key>` | Depends (`REQUIRE_AUTH`) |  | Alternate auth header for protected endpoints |
+
+When `REQUIRE_AUTH=true`, missing/invalid keys return `401 Unauthorized`.
+If request volume exceeds `RATE_LIMIT_PER_MINUTE`, protected endpoints return `429 Too Many Requests`.
 
 ### `POST /ingest`
 
@@ -434,7 +442,7 @@ blazerag/
 - [x] Phase 3: Reranking (cross-encoder)
 - [x] Phase 4: Batch ingestion (PDF, HTML, Markdown)
 - [x] Phase 5: Multi-tenant collections
-- [ ] Phase 6: Auth & rate limiting
+- [x] Phase 6: Auth & rate limiting
 - [ ] Phase 7: Web UI dashboard
 - [ ] Phase 8: Managed cloud offering
 

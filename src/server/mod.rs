@@ -19,6 +19,7 @@ use crate::chunker;
 use crate::ingestor::{self, Encoding, FileFormat};
 use crate::reranker::Reranker;
 use crate::retriever::Document;
+use crate::security::SecurityError;
 use crate::AppState;
 
 #[derive(Serialize, Deserialize)]
@@ -53,6 +54,21 @@ fn extract_tenant_id(headers: &HeaderMap) -> String {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "default".to_string())
+}
+
+fn security_error_response(err: SecurityError) -> axum::response::Response {
+    match err {
+        SecurityError::Unauthorized(msg) => (
+            axum::http::StatusCode::UNAUTHORIZED,
+            Json(serde_json::to_value(ErrorResponse { error: msg }).unwrap()),
+        )
+            .into_response(),
+        SecurityError::RateLimited(msg) => (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::to_value(ErrorResponse { error: msg }).unwrap()),
+        )
+            .into_response(),
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -97,6 +113,13 @@ async fn ingest_handler(
     Json(req): Json<IngestRequest>,
 ) -> impl IntoResponse {
     let tenant_id = extract_tenant_id(&headers);
+    if let Err(err) = state
+        .security
+        .authorize_and_check_rate_limit(&headers, &tenant_id)
+        .await
+    {
+        return security_error_response(err);
+    }
     tracing::info!(
         "Ingesting text ({} chars) for tenant={}",
         req.text.len(),
@@ -115,7 +138,8 @@ async fn ingest_handler(
                 })
                 .unwrap(),
             ),
-        );
+        )
+            .into_response();
     }
 
     let metadata = req.metadata.unwrap_or(serde_json::json!({}));
@@ -132,7 +156,8 @@ async fn ingest_handler(
                     })
                     .unwrap(),
                 ),
-            );
+            )
+                .into_response();
         }
     };
 
@@ -168,6 +193,7 @@ async fn ingest_handler(
                     .unwrap(),
                 ),
             )
+                .into_response()
         }
         Err(e) => {
             tracing::error!("Qdrant upsert failed: {}", e);
@@ -180,6 +206,7 @@ async fn ingest_handler(
                     .unwrap(),
                 ),
             )
+                .into_response()
         }
     }
 }
@@ -221,6 +248,13 @@ async fn batch_ingest_handler(
     Json(req): Json<Vec<BatchFileEntry>>,
 ) -> impl IntoResponse {
     let tenant_id = extract_tenant_id(&headers);
+    if let Err(err) = state
+        .security
+        .authorize_and_check_rate_limit(&headers, &tenant_id)
+        .await
+    {
+        return security_error_response(err);
+    }
     let total = req.len();
     tracing::info!("Batch ingest: {} files for tenant={}", total, tenant_id);
 
@@ -362,6 +396,7 @@ async fn batch_ingest_handler(
             .unwrap(),
         ),
     )
+        .into_response()
 }
 
 async fn query_handler(
@@ -370,6 +405,13 @@ async fn query_handler(
     Json(req): Json<QueryRequest>,
 ) -> impl IntoResponse {
     let tenant_id = extract_tenant_id(&headers);
+    if let Err(err) = state
+        .security
+        .authorize_and_check_rate_limit(&headers, &tenant_id)
+        .await
+    {
+        return security_error_response(err);
+    }
     tracing::info!("Query: {} (tenant={})", req.question, tenant_id);
 
     let query_embeddings = match state.embedder.embed(std::slice::from_ref(&req.question)) {
@@ -502,6 +544,17 @@ async fn query_stream_handler(
     Json(req): Json<QueryRequest>,
 ) -> Result<Sse<SseStream>, (StatusCode, Json<ErrorResponse>)> {
     let tenant_id = extract_tenant_id(&headers);
+    if let Err(err) = state
+        .security
+        .authorize_and_check_rate_limit(&headers, &tenant_id)
+        .await
+    {
+        let (status, message) = match err {
+            SecurityError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
+            SecurityError::RateLimited(msg) => (StatusCode::TOO_MANY_REQUESTS, msg),
+        };
+        return Err((status, Json(ErrorResponse { error: message })));
+    }
     tracing::info!("Streaming query: {} (tenant={})", req.question, tenant_id);
 
     let query_embeddings = state
@@ -637,6 +690,7 @@ mod tests {
     use crate::llm::LlmClient;
     use crate::reranker::Reranker;
     use crate::retriever::Retriever;
+    use crate::security::SecurityState;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use std::sync::Arc;
@@ -667,6 +721,7 @@ mod tests {
             llm_client: Arc::new(llm_client),
             reranker: Arc::new(reranker),
             chunker_config,
+            security: Arc::new(SecurityState::from_env()),
         }
     }
 
