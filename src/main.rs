@@ -1,6 +1,6 @@
 use anyhow::Context;
 use axum::Router;
-use blazerag::{chunker, embedder, llm, reranker, retriever, server, AppState};
+use blazerag::{chunker, embedder, llm, reranker, retriever, security, server, AppState};
 use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
@@ -60,6 +60,13 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("Failed to initialize reranker")?;
 
+    let security = security::SecurityState::from_env();
+    tracing::info!(
+        "Security config loaded: require_auth={}, rate_limit_per_minute={}",
+        security.require_auth,
+        security.rate_limit_per_minute
+    );
+
     let state = AppState {
         embedder: Arc::new(embedder),
         retriever: Arc::new(retriever),
@@ -69,6 +76,7 @@ async fn main() -> anyhow::Result<()> {
             chunk_size,
             chunk_overlap,
         },
+        security: Arc::new(security),
     };
 
     let app = Router::new().merge(server::routes()).with_state(state);

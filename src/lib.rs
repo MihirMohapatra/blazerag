@@ -6,6 +6,7 @@ pub mod ingestor;
 pub mod llm;
 pub mod reranker;
 pub mod retriever;
+pub mod security;
 pub mod server;
 
 #[derive(Clone)]
@@ -15,4 +16,5 @@ pub struct AppState {
     pub llm_client: Arc<llm::LlmClient>,
     pub reranker: Arc<reranker::Reranker>,
     pub chunker_config: chunker::ChunkerConfig,
+    pub security: Arc<security::SecurityState>,
 }
