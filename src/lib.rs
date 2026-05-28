@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 pub mod chunker;
+pub mod dashboard;
 pub mod embedder;
 pub mod ingestor;
 pub mod llm;

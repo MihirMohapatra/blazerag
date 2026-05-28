@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blazerag Dashboard</title>
+<style>
+  :root { --bg: #0d1117; --surface: #161b22; --border: #30363d; --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --green: #3fb950; --red: #f85149; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font: 14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
+  .container { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 24px; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); margin-bottom: 24px; }
+  .status-bar { display: flex; gap: 16px; align-items: center; margin-bottom: 24px; padding: 12px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .status-dot.ok { background: var(--green); }
+  .status-dot.err { background: var(--red); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .card-full { grid-column: 1 / -1; }
+  .card h2 { font-size: 16px; margin-bottom: 12px; color: var(--accent); }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  input, textarea, select { width: 100%; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font: 13px monospace; margin-bottom: 10px; }
+  textarea { min-height: 60px; resize: vertical; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+  button { padding: 8px 16px; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; font: 13px; }
+  button:hover { filter: brightness(1.15); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .output { margin-top: 10px; padding: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font: 13px monospace; white-space: pre-wrap; max-height: 300px; overflow: auto; }
+  .output .info { color: var(--muted); }
+  .output .err { color: var(--red); }
+  .output .token { color: var(--accent); }
+  .output .done { color: var(--green); }
+  .row { display: flex; gap: 8px; align-items: start; }
+  .row > * { flex: 1; }
+  .fade { animation: fadeIn 0.2s; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Blazerag</h1>
+  <div class="subtitle">Blazing-fast RAG dashboard</div>
+
+  <div class="status-bar" id="status-bar">
+    <span class="status-dot" id="status-dot"></span>
+    <span id="status-text">Checking health...</span>
+    <span style="flex:1"></span>
+    <span style="color:var(--muted);font-size:12px" id="status-time"></span>
+  </div>
+
+  <div class="grid">
+    <div class="card card-full">
+      <h2>Ingest Text</h2>
+      <div class="row">
+        <div style="flex:2">
+          <label>Tenant ID</label>
+          <input id="ingest-tenant" value="default" placeholder="default">
+        </div>
+      </div>
+      <label>Text Content</label>
+      <textarea id="ingest-text" placeholder="Paste document text here..."></textarea>
+      <div class="row">
+        <label style="flex:1">Metadata JSON (optional)
+          <input id="ingest-meta" placeholder='{"source":"web"}'>
+        </label>
+        <button id="ingest-btn" onclick="ingest()">Ingest</button>
+      </div>
+      <div class="output" id="ingest-output"><span class="info">Ready</span></div>
+    </div>
+
+    <div class="card card-full">
+      <h2>Batch Ingest</h2>
+      <div class="row">
+        <div style="flex:1">
+          <label>Tenant ID</label>
+          <input id="batch-tenant" value="default">
+        </div>
+        <div style="flex:1">
+          <label>Format</label>
+          <select id="batch-format"><option value="pdf">PDF</option><option value="html">HTML</option><option value="markdown">Markdown</option></select>
+        </div>
+        <div style="flex:1">
+          <label>Encoding</label>
+          <select id="batch-encoding"><option value="utf-8">UTF-8</option><option value="base64">Base64</option></select>
+        </div>
+      </div>
+      <label>File Name</label>
+      <input id="batch-name" placeholder="e.g. doc.pdf">
+      <label>File Content</label>
+      <textarea id="batch-content" placeholder="File content (raw text or base64)..."></textarea>
+      <button id="batch-btn" onclick="batchIngest()">Upload</button>
+      <div class="output" id="batch-output"><span class="info">Ready</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Query</h2>
+      <div class="row">
+        <div style="flex:1">
+          <label>Tenant ID</label>
+          <input id="query-tenant" value="default">
+        </div>
+        <div style="flex:1">
+          <label>Top-K</label>
+          <input id="query-topk" type="number" value="5" min="1" max="50">
+        </div>
+      </div>
+      <label>Question</label>
+      <textarea id="query-text" placeholder="Ask a question..."></textarea>
+      <button id="query-btn" onclick="query()">Ask</button>
+      <div class="output" id="query-output"><span class="info">Ready</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Stream Query</h2>
+      <div class="row">
+        <div style="flex:1">
+          <label>Tenant ID</label>
+          <input id="stream-tenant" value="default">
+        </div>
+        <div style="flex:1">
+          <label>Top-K</label>
+          <input id="stream-topk" type="number" value="5" min="1" max="50">
+        </div>
+      </div>
+      <label>Question</label>
+      <textarea id="stream-text" placeholder="Ask a question..."></textarea>
+      <button id="stream-btn" onclick="streamQuery()">Stream</button>
+      <div class="output" id="stream-output"><span class="info">Ready</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const BASE = '';
+const STATUS_INTERVAL = 15000;
+
+async function api(path, opts = {}) {
+  const res = await fetch(BASE + path, {
+    headers: { 'Content-Type': 'application/json', ...opts.headers },
+    ...opts,
+  });
+  return res;
+}
+
+async function checkHealth() {
+  try {
+    const res = await api('/health');
+    const data = await res.json();
+    document.getElementById('status-dot').className = 'status-dot ok';
+    document.getElementById('status-text').textContent = 'Service: ' + data.service + ' — OK';
+    document.getElementById('status-time').textContent = new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById('status-dot').className = 'status-dot err';
+    document.getElementById('status-text').textContent = 'Health check failed: ' + e.message;
+  }
+}
+
+function getTenantHeader(el) {
+  const v = document.getElementById(el).value.trim();
+  return v && v !== 'default' ? { 'X-Tenant-ID': v } : {};
+}
+
+async function ingest() {
+  const btn = document.getElementById('ingest-btn');
+  const out = document.getElementById('ingest-output');
+  const text = document.getElementById('ingest-text').value.trim();
+  if (!text) { out.innerHTML = '<span class="err">Please enter text content</span>'; return; }
+  btn.disabled = true;
+  out.innerHTML = '<span class="info">Ingesting...</span>';
+  try {
+    const meta = document.getElementById('ingest-meta').value.trim();
+    const body = { text };
+    if (meta) try { body.metadata = JSON.parse(meta); } catch(e) { out.innerHTML = '<span class="err">Invalid metadata JSON</span>'; btn.disabled = false; return; }
+    const res = await api('/ingest', { method: 'POST', body: JSON.stringify(body), headers: getTenantHeader('ingest-tenant') });
+    const data = await res.json();
+    out.innerHTML = '<span class="done">✔ Stored ' + data.chunks + ' chunks</span>\nIDs: ' + (data.ids || []).join(', ');
+  } catch (e) { out.innerHTML = '<span class="err">Error: ' + e.message + '</span>'; }
+  btn.disabled = false;
+}
+
+async function batchIngest() {
+  const btn = document.getElementById('batch-btn');
+  const out = document.getElementById('batch-output');
+  const name = document.getElementById('batch-name').value.trim();
+  const content = document.getElementById('batch-content').value.trim();
+  if (!name || !content) { out.innerHTML = '<span class="err">Please enter file name and content</span>'; return; }
+  btn.disabled = true;
+  out.innerHTML = '<span class="info">Uploading...</span>';
+  try {
+    const body = [{
+      name, content, format: document.getElementById('batch-format').value,
+      encoding: document.getElementById('batch-encoding').value,
+    }];
+    const res = await api('/ingest/batch', { method: 'POST', body: JSON.stringify(body), headers: getTenantHeader('batch-tenant') });
+    const data = await res.json();
+    const items = (data.results || []).map(r => r.name + ': ' + r.chunks + ' chunks' + (r.error ? ' (' + r.error + ')' : '')).join('\n');
+    out.innerHTML = '<span class="done">✔ ' + data.status + ' — ' + data.total_chunks + ' chunks</span>\n' + items;
+  } catch (e) { out.innerHTML = '<span class="err">Error: ' + e.message + '</span>'; }
+  btn.disabled = false;
+}
+
+async function query() {
+  const btn = document.getElementById('query-btn');
+  const out = document.getElementById('query-output');
+  const question = document.getElementById('query-text').value.trim();
+  if (!question) { out.innerHTML = '<span class="err">Please enter a question</span>'; return; }
+  btn.disabled = true;
+  out.innerHTML = '<span class="info">Querying...</span>';
+  try {
+    const res = await api('/query', {
+      method: 'POST',
+      body: JSON.stringify({ question, top_k: parseInt(document.getElementById('query-topk').value) || 5 }),
+      headers: getTenantHeader('query-tenant'),
+    });
+    const data = await res.json();
+    let html = '<span class="done">✔ Answer:</span>\n' + (data.answer || '(no answer)') + '\n\n';
+    if (data.sources && data.sources.length) {
+      html += '<span class="info">Sources (' + data.sources.length + '):</span>\n';
+      data.sources.forEach((s, i) => { html += '[' + (i+1) + '] score=' + s.score.toFixed(3) + ' ' + s.text.slice(0,120) + '...\n'; });
+    }
+    out.innerHTML = html;
+  } catch (e) { out.innerHTML = '<span class="err">Error: ' + e.message + '</span>'; }
+  btn.disabled = false;
+}
+
+async function streamQuery() {
+  const btn = document.getElementById('stream-btn');
+  const out = document.getElementById('stream-output');
+  const question = document.getElementById('stream-text').value.trim();
+  if (!question) { out.innerHTML = '<span class="err">Please enter a question</span>'; return; }
+  btn.disabled = true;
+  out.innerHTML = '';
+  try {
+    const headers = { 'Content-Type': 'application/json', ...getTenantHeader('stream-tenant') };
+    const res = await fetch(BASE + '/query/stream', {
+      method: 'POST', headers, body: JSON.stringify({ question, top_k: parseInt(document.getElementById('stream-topk').value) || 5 }),
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop() || '';
+      for (const part of parts) {
+        for (const line of part.split('\n')) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.type === 'token') {
+                out.innerHTML += '<span class="token">' + escapeHtml(data.content) + '</span>';
+                out.scrollTop = out.scrollHeight;
+              } else if (data.type === 'done') {
+                out.innerHTML += '\n\n<span class="done">✔ Done</span>\n';
+                if (data.sources && data.sources.length) {
+                  out.innerHTML += '<span class="info">Sources (' + data.sources.length + '):</span>\n';
+                  data.sources.forEach((s, i) => { out.innerHTML += '[' + (i+1) + '] score=' + s.score.toFixed(3) + ' ' + escapeHtml(s.text.slice(0,120)) + '...\n'; });
+                }
+              }
+            } catch(e) {}
+          }
+        }
+      }
+    }
+  } catch (e) { out.innerHTML = '<span class="err">Error: ' + e.message + '</span>'; }
+  btn.disabled = false;
+}
+
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+checkHealth();
+setInterval(checkHealth, STATUS_INTERVAL);
+</script>
+</body>
+</html>
