@@ -47,6 +47,7 @@ All measurements taken on a Windows 11 machine (x86_64-pc-windows-gnu toolchain,
 
 - **Ingest** documents via POST API  auto-chunks, embeds, and stores in Qdrant
 - **Batch ingest** PDF, HTML, and Markdown files via `POST /ingest/batch`
+- **Dashboard** Web UI at `/` for ingest, batch upload, query, and streaming
 - **Query** with RAG  retrieves relevant chunks, builds context, calls LLM
 - **Streaming** SSE responses via `/query/stream` endpoint
 - **Reranking** optional cross-encoder reranking (via HuggingFace) after vector search for improved relevance
@@ -354,6 +355,10 @@ data: {"type":"done","sources":[{"text":"...","score":0.95,"id":"uuid-1"}]}
 
 ```
 
+### `GET /`
+
+Web UI dashboard. Returns an HTML page with forms for ingest, batch upload, query, and streaming query.
+
 ### `GET /health`
 
 **Response:** `200 OK`
@@ -411,6 +416,7 @@ blazerag/
 │   ├── chunker/                # text splitting
 │   ├── reranker/               # cross-encoder reranker
 │   ├── ingestor/               # PDF / HTML / Markdown parsing
+│   ├── dashboard/              # Web UI dashboard
 │   └── llm/                    # LLM API calls
 ├── docs/
 ├── examples/
@@ -443,7 +449,7 @@ blazerag/
 - [x] Phase 4: Batch ingestion (PDF, HTML, Markdown)
 - [x] Phase 5: Multi-tenant collections
 - [x] Phase 6: Auth & rate limiting
-- [ ] Phase 7: Web UI dashboard
+- [x] Phase 7: Web UI dashboard
 - [ ] Phase 8: Managed cloud offering
 
 ---

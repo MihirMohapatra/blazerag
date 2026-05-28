@@ -93,6 +93,7 @@ type SseStream = Pin<Box<dyn Stream<Item = Result<Event, anyhow::Error>> + Send>
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/", get(crate::dashboard::dashboard))
         .route("/health", get(health_check))
         .route("/ingest", post(ingest_handler))
         .route("/ingest/batch", post(batch_ingest_handler))
@@ -866,6 +867,7 @@ mod tests {
     async fn test_routes_are_registered() {
         let app = routes();
         let routes_str = format!("{:?}", app);
+        assert!(routes_str.contains("\"/\""));
         assert!(routes_str.contains("/health"));
         assert!(routes_str.contains("/ingest"));
         assert!(routes_str.contains("/ingest/batch"));
