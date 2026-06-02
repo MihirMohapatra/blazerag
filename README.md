@@ -14,112 +14,119 @@
 
 ## Why BlazeRAG?
 
-Most RAG systems are built on Python runtimes  which means GIL contention, heavyweight processes, and slow cold starts. BlazeRAG is written entirely in Rust, giving you:
+Most RAG systems are built on Python runtimes, which means GIL contention, heavyweight processes, and slow cold starts. BlazeRAG is written in Rust, giving you:
 
-- **Zero GIL**  true async concurrency via Tokio
-- **Low memory footprint**  no interpreter overhead
-- **Fast cold start**  38 ms to first request
-- **Single binary**  no virtualenvs, no dependency hell
+- **Zero GIL**: true async concurrency via Tokio
+- **Low memory footprint**: no interpreter overhead
+- **Fast cold start**: 38 ms to first request
+- **Single binary**: no virtualenvs and no Python dependency stack
 
-If you're building a production RAG pipeline that needs to scale without throwing more hardware at it, BlazeRAG is the drop-in server to evaluate.
+If you are building a production RAG pipeline that needs to scale without throwing more hardware at it, BlazeRAG is a drop-in server to evaluate.
 
 ---
 
 ## Benchmarks
 
-All measurements taken on a Windows 11 machine (x86_64-pc-windows-gnu toolchain, no ONNX).
+All measurements below were taken on a Windows 11 machine using the `x86_64-pc-windows-gnu` toolchain and HTTP-only embeddings.
 
 | Metric | Measured | Notes |
 |--------|----------|-------|
 | Binary cold start | **38 ms** | `basic_usage` example, first run |
 | Chunking throughput | **63 ops/sec** | 268 KB text, 1,111 chunks, 10k iterations |
-| Chunker warmup (100x) | **349 us** | ~3.5 us/op |
-| Avg chunk size | **525 chars** | config: 512 chunk size, 64 overlap |
-| Compile time (release) | **1m 59s** | full dependency tree, cold cache |
+| Chunker warmup (100x) | **349 us** | About 3.5 us/op |
+| Average chunk size | **525 chars** | Config: 512 chunk size, 64 overlap |
+| Compile time (release) | **1m 59s** | Full dependency tree, cold cache |
 
-> **Note on the "5,000+ concurrent requests" claim:** This is a target benchmark based on Axum/Tokio's known throughput characteristics and will be formally measured in v0.2.0 on a c6i.4xlarge with full-stack (Qdrant + LLM) load testing. The numbers above reflect current unit-level benchmarks only.
+> The previous "5,000+ concurrent requests" target has not been validated by full-stack load testing yet. BlazeRAG should be benchmarked with your own Qdrant, embedding, and LLM setup before using that number for capacity planning.
 
-*Benchmarks run via `examples/bench.rs` on release build without ONNX. Full-stack benchmarks (with Qdrant + LLM) coming soon.*
+Run the active benchmark with:
+
+```bash
+cargo run --release --no-default-features --example bench
+```
+
+Full-stack benchmarks with Qdrant and an LLM provider are planned for a later release.
 
 ---
 
 ## Features
 
-- **Ingest** documents via POST API  auto-chunks, embeds, and stores in Qdrant
-- **Batch ingest** PDF, HTML, and Markdown files via `POST /ingest/batch`
-- **Dashboard** Web UI at `/` for ingest, batch upload, query, and streaming
-- **Query** with RAG  retrieves relevant chunks, builds context, calls LLM
-- **Streaming** SSE responses via `/query/stream` endpoint
-- **Reranking** optional cross-encoder reranking (via HuggingFace) after vector search for improved relevance
-- **Multi-tenant** isolated Qdrant collections per tenant via `X-Tenant-ID` header; collections created lazily on first use
-- **Modular embedders**  HTTP (HuggingFace API) or ONNX (local, feature-gated, experimental)
-- **Vector search** via Qdrant  cosine similarity, configurable top-k
-- **LLM agnostic**  OpenAI, Anthropic, or any OpenAI-compatible endpoint
-- **Docker ready**  one-command deploy with Qdrant
+- **Text ingest** via `POST /ingest`: chunks, embeds, and stores documents in Qdrant
+- **Batch ingest** via `POST /ingest/batch`: PDF, HTML, and Markdown input
+- **Dashboard** at `/`: ingest, batch upload, query, and streaming query UI
+- **RAG query** via `POST /query`: retrieves context and calls an LLM
+- **Streaming query** via `POST /query/stream`: Server-Sent Events token stream
+- **Reranking**: optional HuggingFace cross-encoder reranking after vector search
+- **Multi-tenancy**: tenant-isolated Qdrant collections via the `X-Tenant-ID` header
+- **Modular embedders**: HuggingFace-compatible HTTP embeddings or experimental local ONNX
+- **Vector search**: Qdrant cosine similarity with configurable top-k retrieval
+- **LLM-compatible**: OpenAI or OpenAI-compatible chat completions endpoint
+- **Docker ready**: Qdrant included in `docker-compose.yml`
 
 ---
 
 ## Prerequisites
 
-- [Rust](https://www.rust-lang.org/tools/install) 1.77+ (for native build)
-- [Docker & Docker Compose](https://docs.docker.com/compose/install/) (for containerized setup)
-- An **LLM API key** (OpenAI, Anthropic, or compatible)
+- [Rust](https://www.rust-lang.org/tools/install) 1.77+ for native builds
+- [Docker and Docker Compose](https://docs.docker.com/compose/install/) for Qdrant or containerized setup
+- An LLM API key for OpenAI or an OpenAI-compatible service
+- A HuggingFace token when using the default HTTP embedding endpoint
 
 ---
 
-## Install
+## Quick Start
 
-### Option 1: Docker (recommended)
+### Docker
 
 ```bash
 git clone https://github.com/MihirMohapatra/blazerag
 cd blazerag
 cp .env.example .env
-# Edit .env  set your LLM_API_KEY
+# Edit .env and set LLM_API_KEY plus embedding credentials if needed.
 docker compose up -d
 ```
 
-### Option 2: From source
+The server starts at `http://localhost:3000`.
+
+### Native, HTTP-Only Embeddings
+
+This is the most portable source build and is recommended on Windows GNU because the default ONNX feature can require an MSVC-compatible linker/toolchain.
 
 ```bash
 git clone https://github.com/MihirMohapatra/blazerag
 cd blazerag
 cp .env.example .env
-# Edit .env  set your LLM_API_KEY and QDRANT_URL
+# Edit .env and set LLM_API_KEY, EMBEDDING_API_KEY, and QDRANT_URL if needed.
 
-# Start Qdrant separately first:
 docker compose up -d qdrant
+cargo run --release --no-default-features
+```
 
-# Build and run Blazerag:
+### Native, ONNX Embeddings
+
+ONNX support is experimental and enabled by the default `onnx` feature:
+
+```bash
+docker compose up -d qdrant
 cargo run --release
 ```
 
-### Option 3: Cargo install
+Set `EMBEDDING_BACKEND=onnx` and `ONNX_MODEL_PATH` in `.env` to use a local ONNX model.
+
+### Cargo Install
 
 ```bash
 cargo install blazerag
 blazerag
 ```
 
-> **Note:** The ONNX embedder (`--features onnx`, default) is experimental and uses `ort 2.0.0-rc.12` (a release candidate). On Windows GNU toolchain or for stable builds, use `--no-default-features` to fall back to the HTTP embedder. See [Configuration](#configuration).
+If your platform has trouble compiling `ort`, install or run with `--no-default-features` from source.
 
 ---
 
-## Run
+## API Examples
 
-### Start the server
-
-```bash
-# Make sure Qdrant is running
-docker compose up -d qdrant
-
-# Start Blazerag
-cargo run --release
-```
-
-The server starts on `http://0.0.0.0:3000` by default (configurable via `HOST` and `PORT` env vars).
-
-### Ingest a document
+### Ingest a Document
 
 ```bash
 curl -X POST http://localhost:3000/ingest \
@@ -132,6 +139,7 @@ curl -X POST http://localhost:3000/ingest \
 ```
 
 Response:
+
 ```json
 {
   "status": "ok",
@@ -140,7 +148,7 @@ Response:
 }
 ```
 
-### Ask a question
+### Ask a Question
 
 ```bash
 curl -X POST http://localhost:3000/query \
@@ -153,6 +161,7 @@ curl -X POST http://localhost:3000/query \
 ```
 
 Response:
+
 ```json
 {
   "answer": "Blazerag is a blazing-fast RAG server written in Rust...",
@@ -162,73 +171,80 @@ Response:
 }
 ```
 
-### Health check
+### Health Check
 
 ```bash
 curl http://localhost:3000/health
-# {"status":"ok","service":"blazerag"}
+```
+
+```json
+{"status":"ok","service":"blazerag"}
 ```
 
 ---
 
 ## Configuration
 
-All configuration is via environment variables (see `.env.example`):
+All configuration is read from environment variables. See [.env.example](.env.example) for a complete starter file.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `HOST` | `0.0.0.0` | Server bind address |
 | `PORT` | `3000` | Server port |
-| `QDRANT_URL` | `http://localhost:6333` | Qdrant HTTP/REST endpoint (port 6334 for gRPC) |
-| `QDRANT_COLLECTION` | `documents` | Qdrant collection name |
-| `EMBEDDING_BACKEND` | `http` | `http` (HuggingFace API) or `onnx` (local, experimental) |
-| `EMBEDDING_API_URL` | HuggingFace all-MiniLM-L6-v2 | Embedding API endpoint |
-| `EMBEDDING_API_KEY` |  | API key for embedding service |
-| `ONNX_MODEL_PATH` | `./models/all-MiniLM-L6-v2.onnx` | Path to ONNX model file |
-| `EMBEDDING_DIM` | `384` | Embedding dimension |
-| `LLM_PROVIDER` | `openai` | LLM provider (`openai`, `anthropic`) |
-| `LLM_API_KEY` |  | LLM API key (required) |
-| `LLM_MODEL` | `gpt-4o-mini` | Model name |
-| `LLM_ENDPOINT` | OpenAI API | LLM API endpoint |
-| `CHUNK_SIZE` | `512` | Max chars per chunk |
+| `QDRANT_URL` | `http://localhost:6333` | Qdrant endpoint |
+| `QDRANT_COLLECTION` | `documents` | Base Qdrant collection name |
+| `EMBEDDING_BACKEND` | `http` | `http` or `onnx` |
+| `EMBEDDING_API_URL` | HuggingFace all-MiniLM-L6-v2 | HTTP embedding endpoint |
+| `EMBEDDING_API_KEY` | Empty | API key for the embedding service |
+| `ONNX_MODEL_PATH` | `./models/all-MiniLM-L6-v2.onnx` | Local ONNX model path |
+| `EMBEDDING_DIM` | `384` | Embedding dimension used when creating Qdrant collections |
+| `LLM_PROVIDER` | `openai` | Provider label used in logs; requests use the OpenAI chat completions shape |
+| `LLM_API_KEY` | Empty | LLM API key |
+| `LLM_MODEL` | `gpt-4o-mini` | Chat model name |
+| `LLM_ENDPOINT` | OpenAI chat completions API | Chat completions endpoint |
+| `CHUNK_SIZE` | `512` | Max characters per chunk |
 | `CHUNK_OVERLAP` | `64` | Overlap between chunks |
-| `TOP_K` | `5` | Default top-k retrieval |
-| `REQUIRE_AUTH` | `false` | Require API key on ingest/query endpoints (`true`/`false`) |
-| `API_KEYS` |  | Comma-separated valid API keys (used by `X-API-Key` or `Authorization: Bearer`) |
-| `RATE_LIMIT_PER_MINUTE` | `120` | Per-identity request limit (ingest/query endpoints) |
-| `RERANKER_API_URL` | HuggingFace cross-encoder | Cross-encoder reranker endpoint (leave empty to disable) |
-| `RERANKER_API_KEY` |  | API key for reranker (falls back to `HF_API_KEY`) |
+| `TOP_K` | `5` | Default retrieval count when a `/query` request omits `top_k` |
+| `REQUIRE_AUTH` | `false` | Require API key on ingest/query endpoints |
+| `API_KEYS` | Empty | Comma-separated valid API keys |
+| `RATE_LIMIT_PER_MINUTE` | `120` | Per-identity request limit |
+| `RERANKER_API_URL` | HuggingFace cross-encoder | Reranker endpoint; leave empty to disable |
+| `RERANKER_API_KEY` | Empty | Reranker key; falls back to `HF_API_KEY` when implemented by the provider |
 
 ---
 
-## Test
+## Testing
 
 ```bash
-# Run all unit tests
+# Fast local unit tests
 cargo test
 
-# Run with specific features
+# HTTP-only build/test path, useful on Windows GNU
 cargo test --no-default-features
 
-# Run linter
+# CI-style all-features test path, useful on Linux or MSVC setups where ONNX builds
+cargo test --all-features
+
+# Lint and format
 cargo clippy -- -D warnings
-
-# Check formatting
 cargo fmt --check
-
-# Full CI pipeline locally
-cargo test --all-features && cargo clippy -- -D warnings && cargo fmt --check
 ```
 
-### Test coverage
+Some HTTP integration tests are marked `#[ignore]` because they require Qdrant and external API credentials:
 
-| Module | Tests | Status |
-|--------|-------|--------|
-| Chunker | Basic splitting, overlap, empty text |  |
-| Embedder (HTTP) | Deterministic output, normalization |  |
-| Reranker | Score parsing (direct, classification, object), sorting |  |
-| Ingestor | Format/encoding parsing, HTML/MD parsing, base64 round-trip |  |
-| Server | Integration via HTTP endpoints, SSE streaming |  (integration)`#[ignore]`d |
+```bash
+cargo test -- --ignored
+```
+
+### Test Coverage
+
+| Module | Coverage |
+|--------|----------|
+| Chunker | Basic splitting, overlap, empty text |
+| Embedder HTTP | Deterministic output and normalization |
+| Reranker | Score parsing and result sorting |
+| Ingestor | Format parsing, encoding parsing, HTML/Markdown parsing, base64 round-trip |
+| Server | HTTP endpoints and SSE streaming tests, ignored by default when they need external services |
 
 ---
 
@@ -238,39 +254,41 @@ cargo test --all-features && cargo clippy -- -D warnings && cargo fmt --check
 
 | Header | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `X-Tenant-ID` | No | `default` | Isolates data per tenant into separate Qdrant collections |
-| `X-API-Key` | Depends (`REQUIRE_AUTH`) |  | API key auth header for protected endpoints |
-| `Authorization: Bearer <key>` | Depends (`REQUIRE_AUTH`) |  | Alternate auth header for protected endpoints |
+| `X-Tenant-ID` | No | `default` | Routes data into a tenant-specific Qdrant collection |
+| `X-API-Key` | When `REQUIRE_AUTH=true` | Empty | API key auth header |
+| `Authorization: Bearer <key>` | When `REQUIRE_AUTH=true` | Empty | Alternate auth header |
 
-When `REQUIRE_AUTH=true`, missing/invalid keys return `401 Unauthorized`.
-If request volume exceeds `RATE_LIMIT_PER_MINUTE`, protected endpoints return `429 Too Many Requests`.
+When `REQUIRE_AUTH=true`, missing or invalid keys return `401 Unauthorized`. Requests above `RATE_LIMIT_PER_MINUTE` return `429 Too Many Requests`.
 
 ### `POST /ingest`
 
 Ingest text into the vector store.
 
-**Request:**
+Request:
+
 ```json
 {
-  "text": "string (required)  document content",
-  "metadata": "object (optional)  arbitrary key-value pairs"
+  "text": "string (required)",
+  "metadata": { "source": "optional metadata object" }
 }
 ```
 
-**Response:** `200 OK`
+Response: `200 OK`
+
 ```json
 {
   "status": "ok",
-  "chunks": "number of chunks stored",
-  "ids": "array of chunk UUIDs"
+  "chunks": 2,
+  "ids": ["uuid-1", "uuid-2"]
 }
 ```
 
 ### `POST /ingest/batch`
 
-Ingest multiple PDF, HTML, or Markdown files (base64-encoded content).
+Ingest multiple PDF, HTML, or Markdown files.
 
-**Request:**
+Request:
+
 ```json
 [
   {
@@ -289,7 +307,8 @@ Ingest multiple PDF, HTML, or Markdown files (base64-encoded content).
 ]
 ```
 
-**Response:** `200 OK` (or `207 Multi-Status` on partial failure)
+Response: `200 OK`, or `207 Multi-Status` on partial failure
+
 ```json
 {
   "status": "ok",
@@ -306,22 +325,24 @@ Ingest multiple PDF, HTML, or Markdown files (base64-encoded content).
 
 Ask a question using RAG.
 
-**Request:**
+Request:
+
 ```json
 {
-  "question": "string (required)  your question",
-  "top_k": "number (optional, default: 5)  number of chunks to retrieve"
+  "question": "string (required)",
+  "top_k": 5
 }
 ```
 
-**Response:** `200 OK`
+Response: `200 OK`
+
 ```json
 {
-  "answer": "string  LLM-generated answer",
+  "answer": "string",
   "sources": [
     {
       "text": "retrieved chunk text",
-      "score": "cosine similarity score (0-1)",
+      "score": 0.95,
       "id": "chunk UUID"
     }
   ]
@@ -330,38 +351,26 @@ Ask a question using RAG.
 
 ### `POST /query/stream`
 
-Stream a question via Server-Sent Events. Same request format as `/query`.
+Stream a RAG answer via Server-Sent Events. The request body matches `/query`.
 
-**Request:**
-```json
-{
-  "question": "string (required)  your question",
-  "top_k": "number (optional, default: 5)"
-}
-```
+Response: `200 OK` with `Content-Type: text/event-stream`
 
-**Response:** `200 OK` with `Content-Type: text/event-stream`
-
-```
+```text
 data: {"type":"token","content":"Blazerag"}
 
 data: {"type":"token","content":" is"}
 
-data: {"type":"token","content":" a"}
-
-data: {"type":"token","content":" blazing-fast"}
-
 data: {"type":"done","sources":[{"text":"...","score":0.95,"id":"uuid-1"}]}
-
 ```
 
 ### `GET /`
 
-Web UI dashboard. Returns an HTML page with forms for ingest, batch upload, query, and streaming query.
+Returns the web dashboard.
 
 ### `GET /health`
 
-**Response:** `200 OK`
+Response: `200 OK`
+
 ```json
 {
   "status": "ok",
@@ -373,101 +382,82 @@ Web UI dashboard. Returns an HTML page with forms for ingest, batch upload, quer
 
 ## Architecture
 
-```
+```text
 Client Request
-     ↓
-[Rust HTTP Server]   ← tokio + axum
-     ↓
-[Query Embedder]     ← ort (ONNX) or HuggingFace API
-     ↓
-[Vector Search]      ← qdrant-client (per-tenant collections)
-     ↓
-[Context Builder]    ← chunk ranking + reranking (cross-encoder)
-     ↓
-[LLM API Call]       ← reqwest → OpenAI / Anthropic
-     ↓
-Streamed Response (SSE)
+     |
+     v
+[Rust HTTP Server] <- tokio + axum
+     |
+     v
+[Query Embedder]   <- ort (ONNX) or HuggingFace API
+     |
+     v
+[Vector Search]    <- qdrant-client, tenant collections
+     |
+     v
+[Context Builder]  <- vector ranking plus optional reranking
+     |
+     v
+[LLM API Call]     <- reqwest to OpenAI or a compatible endpoint
+     |
+     v
+Response JSON or SSE stream
 ```
 
 See [docs/architecture.md](docs/architecture.md) for a detailed breakdown.
 
-### Flow details
+### Flow Details
 
-1. **Ingest**: Text → chunk → embed → store in Qdrant (tenant-isolated collection)
-2. **Batch Ingest**: PDF/HTML/Markdown → parse → chunk → embed → store (tenant-isolated)
-3. **Query**: Question → embed → vector search (tenant-isolated) → rerank (cross-encoder) → build context → LLM generates answer → return with sources
-4. **Streaming**: `/query/stream` returns SSE events (`type: token` per LLM token, `type: done` with sources)
-5. **Reranking**: Optional cross-encoder re-ranks vector search results via HuggingFace Inference API; falls back to vector scores on error
-6. **Multi-tenant**: Each `X-Tenant-ID` maps to an isolated Qdrant collection (`{prefix}_{tenant}`); collections created lazily on first use
+1. **Ingest**: Text -> chunk -> embed -> store in Qdrant
+2. **Batch ingest**: PDF/HTML/Markdown -> parse -> chunk -> embed -> store
+3. **Query**: Question -> embed -> vector search -> optional rerank -> build context -> generate answer
+4. **Streaming**: `/query/stream` emits token events and a final `done` event with sources
+5. **Multi-tenant routing**: `X-Tenant-ID` maps to `{QDRANT_COLLECTION}_{tenant}`
 
 ---
 
 ## Project Structure
 
-```
+```text
 blazerag/
-├── .github/workflows/ci.yml    # auto-test on push
-├── src/
-│   ├── main.rs                 # entry point
-│   ├── lib.rs                  # AppState, module exports
-│   ├── server/                 # axum HTTP routes
-│   ├── embedder/               # ONNX / HTTP embedding logic
-│   ├── retriever/              # vector search (Qdrant)
-│   ├── chunker/                # text splitting
-│   ├── reranker/               # cross-encoder reranker
-│   ├── ingestor/               # PDF / HTML / Markdown parsing
-│   ├── dashboard/              # Web UI dashboard
-│   └── llm/                    # LLM API calls
-├── docs/
-├── examples/
-├── benches/                    # benchmarks vs Python
-├── Cargo.toml
-├── Dockerfile
-├── docker-compose.yml          # includes Qdrant
-├── README.md                   # ← most important file
-└── .env.example
+|-- .github/workflows/ci.yml
+|-- src/
+|   |-- main.rs          # Entry point
+|   |-- lib.rs           # AppState and module exports
+|   |-- server/          # Axum HTTP routes
+|   |-- embedder/        # ONNX and HTTP embedding logic
+|   |-- retriever/       # Qdrant vector search
+|   |-- chunker/         # Text splitting
+|   |-- reranker/        # Cross-encoder reranker
+|   |-- ingestor/        # PDF, HTML, and Markdown parsing
+|   |-- dashboard/       # Web UI dashboard
+|   `-- llm/             # LLM API client
+|-- docs/
+|-- examples/
+|-- benches/
+|-- Cargo.toml
+|-- Dockerfile
+|-- docker-compose.yml
+|-- README.md
+`-- .env.example
 ```
-
----
-
-## Tags
-
-| Tag | Description |
-|-----|-------------|
-| `v0.1.0` | MVP  ingest, query, HTTP embeddings, Qdrant integration |
-| `latest` | Latest stable release (Docker) |
-| `main` | Development branch (may be unstable) |
-
----
-
-## Roadmap
-
-- [x] Phase 0: Project setup, README, CI
-- [x] Phase 1: MVP  /ingest, /query, embeddings, vector search
-- [x] Phase 2: Streaming SSE responses + server integration tests
-- [x] Phase 3: Reranking (cross-encoder)
-- [x] Phase 4: Batch ingestion (PDF, HTML, Markdown)
-- [x] Phase 5: Multi-tenant collections
-- [x] Phase 6: Auth & rate limiting
-- [x] Phase 7: Web UI dashboard
-- [ ] Phase 8: Managed cloud offering
 
 ---
 
 ## Development
 
 ```bash
-# Watch mode (requires cargo-watch)
+# Watch mode; requires cargo-watch
 cargo watch -x run
 
-# Build with ONNX support (default, experimental)
-cargo build --release --features onnx
+# Build with ONNX support; default feature, experimental
+cargo build --release
 
-# Build without ONNX (HTTP embedder only, stable)
+# Build without ONNX; HTTP embedder only
 cargo build --release --no-default-features
 
-# Run benchmarks
-cargo bench
+# Run active benchmarks
+cargo run --release --no-default-features --example bench
 
 # Generate docs
 cargo doc --open
@@ -475,14 +465,28 @@ cargo doc --open
 
 ---
 
+## Roadmap
+
+- [x] Phase 0: Project setup, README, CI
+- [x] Phase 1: MVP with `/ingest`, `/query`, embeddings, and vector search
+- [x] Phase 2: Streaming SSE responses and server integration tests
+- [x] Phase 3: Reranking
+- [x] Phase 4: Batch ingestion for PDF, HTML, and Markdown
+- [x] Phase 5: Multi-tenant collections
+- [x] Phase 6: Auth and rate limiting
+- [x] Phase 7: Web UI dashboard
+- [ ] Phase 8: Managed cloud offering
+
+---
+
 ## Contributing
 
-1. Fork the repo
-2. Create your feature branch (`git checkout -b feat/amazing`)
-3. Run tests (`cargo test && cargo clippy -- -D warnings && cargo fmt --check`)
-4. Commit (`git commit -m 'feat: add amazing feature'`)
-5. Push (`git push origin feat/amazing`)
-6. Open a Pull Request
+1. Fork the repo.
+2. Create your feature branch: `git checkout -b feat/amazing`.
+3. Run checks: `cargo test && cargo clippy -- -D warnings && cargo fmt --check`.
+4. Commit: `git commit -m "feat: add amazing feature"`.
+5. Push: `git push origin feat/amazing`.
+6. Open a pull request.
 
 ---
 

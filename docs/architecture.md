@@ -2,56 +2,75 @@
 
 ## Overview
 
-BlazeRAG is a high-performance Retrieval-Augmented Generation (RAG) server built in Rust using the Axum web framework and Tokio async runtime.
+BlazeRAG is a high-performance Retrieval-Augmented Generation (RAG) server built in Rust using Axum and Tokio.
 
 ## Components
 
 ### HTTP Server (`src/server/`)
-Axum-based server exposing endpoints:
-- `POST /ingest` " chunk, embed, and store documents (tenant-isolated)
-- `POST /query` " embed question, retrieve context, stream LLM answer (tenant-isolated)
-- `POST /query/stream` " SSE streaming query
-- `GET /health` " liveness probe
-- `X-Tenant-ID` header routes requests to isolated Qdrant collections
+
+Axum-based server exposing:
+
+- `GET /`: dashboard UI
+- `GET /health`: liveness probe
+- `POST /ingest`: chunk, embed, and store text
+- `POST /ingest/batch`: parse and ingest PDF, HTML, or Markdown files
+- `POST /query`: retrieve context and generate a RAG answer
+- `POST /query/stream`: stream the answer via Server-Sent Events
+
+The optional `X-Tenant-ID` header routes requests to isolated Qdrant collections.
 
 ### Chunker (`src/chunker/`)
-Splits input text into overlapping chunks using the `text-splitter` crate. Configurable via `CHUNK_SIZE` and `CHUNK_OVERLAP` env vars.
+
+Splits input text into overlapping chunks using `text-splitter`. Configure it with `CHUNK_SIZE` and `CHUNK_OVERLAP`.
 
 ### Embedder (`src/embedder/`)
-Two backends selectable via `EMBEDDING_BACKEND`:
-- **HTTP** (`http.rs`): Calls HuggingFace Inference API (default)
-- **ONNX** (`onnx.rs`): Runs `all-MiniLM-L6-v2` locally via `ort` (feature-gated, experimental)
+
+Two backends are selectable with `EMBEDDING_BACKEND`:
+
+- `http`: calls a HuggingFace-compatible feature extraction endpoint
+- `onnx`: runs a local ONNX model via `ort` when the `onnx` feature is enabled
 
 ### Retriever (`src/retriever/`)
-Wraps the Qdrant client for vector upsert and cosine-similarity search. Supports multi-tenant isolation:
 
-- Collection name = `{prefix}_{tenant_id}`, or just `{prefix}` for the "default" tenant
-- Collections are created lazily on first upsert or search per tenant
-- Each document payload includes a `tenant_id` field for auditability
+Wraps the Qdrant client for vector upsert and cosine-similarity search.
+
+- Default tenant collection: `{QDRANT_COLLECTION}`
+- Named tenant collection: `{QDRANT_COLLECTION}_{tenant_id}`
+- Collections are created lazily on first upsert or search
+- Each payload includes `tenant_id` for auditability
 
 ### Reranker (`src/reranker/`)
-Optional cross-encoder reranker (HuggingFace) that re-scores vector search results for improved relevance. Gracefully falls back to vector scores on error.
+
+Optionally calls a HuggingFace cross-encoder endpoint to rescore vector search results. If reranking fails, the server falls back to the original vector scores.
 
 ### LLM Client (`src/llm/`)
-Thin adapter over OpenAI-compatible APIs. Supports OpenAI and Anthropic providers. Streams responses back to the caller via SSE.
+
+Sends OpenAI-style chat completion requests and supports streaming responses. The endpoint is configurable, so OpenAI-compatible services can be used.
 
 ## Data Flow
 
-```
-Ingest:  text ' chunker ' embedder ' qdrant upsert (tenant collection)
-Query:   question ' embedder ' qdrant search (tenant collection) ' reranker ' context builder ' LLM ' streamed answer + sources
-Multi-tenant: X-Tenant-ID header ' collection routing ' isolated per-tenant Qdrant shards
+```text
+Ingest:
+text -> chunker -> embedder -> Qdrant upsert
+
+Query:
+question -> embedder -> Qdrant search -> optional reranker -> context builder -> LLM -> answer + sources
+
+Streaming query:
+question -> retrieval pipeline -> LLM stream -> SSE token events -> done event with sources
+
+Multi-tenant routing:
+X-Tenant-ID -> collection name -> isolated tenant collection
 ```
 
 ## Multi-Tenant Design
 
-- **Isolation level**: Collection-level (each tenant gets a separate Qdrant collection)
-- **Header**: `X-Tenant-ID` optional HTTP header; defaults to `"default"`
-- **Collection naming**: `{QDRANT_COLLECTION}_{tenant_id}` (e.g., `documents_acme-corp`)
-- **Lazy creation**: Collections auto-created on first insert or search for that tenant
-- **Payload**: Each point stored with a `tenant_id` field for additional filtering if needed
-- **No shared state**: Tenants cannot access each other's data since each collection is independent
+- **Isolation level**: collection-level isolation in Qdrant
+- **Header**: `X-Tenant-ID`, optional, defaults to `default`
+- **Collection naming**: `{QDRANT_COLLECTION}_{tenant_id}`, except the default tenant uses `{QDRANT_COLLECTION}`
+- **Lazy creation**: collections are created on first insert or search
+- **Payload**: each point stores `tenant_id` for traceability
 
 ## Configuration
 
-All settings are environment variables. See `.env.example` for the full list.
+All settings are environment variables. See [.env.example](../.env.example) for the full list.

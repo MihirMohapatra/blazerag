@@ -44,7 +44,11 @@ pub struct QueryRequest {
 }
 
 fn default_top_k() -> u64 {
-    5
+    std::env::var("TOP_K")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(5)
 }
 
 fn extract_tenant_id(headers: &HeaderMap) -> String {
@@ -697,6 +701,8 @@ mod tests {
     use std::sync::Arc;
     use tower::ServiceExt;
 
+    static TOP_K_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn test_state() -> AppState {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let embedder = rt.block_on(async {
@@ -842,10 +848,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_query_request_default_top_k() {
+        let _guard = TOP_K_ENV_LOCK.lock().unwrap();
+        std::env::remove_var("TOP_K");
         let json = r#"{"question": "test"}"#;
         let req: QueryRequest = serde_json::from_str(json).unwrap();
         assert_eq!(req.question, "test");
         assert_eq!(req.top_k, 5);
+    }
+
+    #[tokio::test]
+    async fn test_query_request_default_top_k_from_env() {
+        let _guard = TOP_K_ENV_LOCK.lock().unwrap();
+        std::env::set_var("TOP_K", "9");
+        let json = r#"{"question": "test"}"#;
+        let req: QueryRequest = serde_json::from_str(json).unwrap();
+        std::env::remove_var("TOP_K");
+        assert_eq!(req.top_k, 9);
     }
 
     #[tokio::test]
