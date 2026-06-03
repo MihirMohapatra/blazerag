@@ -26,9 +26,7 @@ pub fn chunk_text(text: &str, config: &ChunkerConfig) -> Vec<String> {
     let mut overlapped = Vec::new();
     for chunk in chunks.windows(2) {
         overlapped.push(chunk[0].to_string());
-        let overlap_len = config.chunk_overlap.min(chunk[0].len());
-        if overlap_len > 0 {
-            let overlap_text = &chunk[0][chunk[0].len() - overlap_len..];
+        if let Some(overlap_text) = suffix_by_chars(chunk[0], config.chunk_overlap) {
             let combined = format!("{}{}", overlap_text, chunk[1]);
             overlapped.push(combined);
         }
@@ -38,6 +36,21 @@ pub fn chunk_text(text: &str, config: &ChunkerConfig) -> Vec<String> {
     }
 
     overlapped
+}
+
+fn suffix_by_chars(text: &str, max_chars: usize) -> Option<&str> {
+    if max_chars == 0 {
+        return None;
+    }
+
+    let start = text
+        .char_indices()
+        .rev()
+        .nth(max_chars.saturating_sub(1))
+        .map(|(idx, _)| idx)
+        .unwrap_or(0);
+
+    Some(&text[start..])
 }
 
 #[cfg(test)]
@@ -72,5 +85,26 @@ mod tests {
         let config = ChunkerConfig::default();
         let chunks = chunk_text("", &config);
         assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn test_multibyte_overlap_does_not_panic() {
+        let config = ChunkerConfig {
+            chunk_size: 24,
+            chunk_overlap: 5,
+        };
+        let text = "Rust handles multilingual text: नमस्ते दुनिया. More content follows.";
+        let chunks = chunk_text(text, &config);
+        assert!(!chunks.is_empty());
+        assert!(chunks
+            .iter()
+            .all(|chunk| chunk.is_char_boundary(chunk.len())));
+    }
+
+    #[test]
+    fn test_suffix_by_chars_handles_multibyte_text() {
+        assert_eq!(suffix_by_chars("abcé😀z", 3), Some("é😀z"));
+        assert_eq!(suffix_by_chars("नमस्ते", 99), Some("नमस्ते"));
+        assert_eq!(suffix_by_chars("नमस्ते", 0), None);
     }
 }
