@@ -44,9 +44,7 @@ Run the active benchmark with:
 ```bash
 cargo run --release --no-default-features --example bench
 ```
-
 Full-stack benchmarks with Qdrant and an LLM provider are planned for a later release.
-
 ---
 
 ## Features
