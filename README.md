@@ -22,7 +22,6 @@ Most RAG systems are built on Python runtimes, which means GIL contention, heavy
 - **Single binary**: no virtualenvs and no Python dependency stack
 
 If you are building a production RAG pipeline that needs to scale without throwing more hardware at it, BlazeRAG is a drop-in server to evaluate.
-
 ---
 
 ## Benchmarks
